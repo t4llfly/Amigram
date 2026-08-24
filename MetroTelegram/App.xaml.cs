@@ -1,232 +1,210 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Resources;
+using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Markup;
 using System.Windows.Navigation;
 using Microsoft.Phone.Controls;
 using Microsoft.Phone.Shell;
-using MetroTelegram.Resources;
+using MetroTelegram.Crypto;
+using MetroTelegram.TL;
+using MetroTelegram.Transport;
+using MetroTelegram.ViewModels;
 
 namespace MetroTelegram
 {
     public partial class App : Application
     {
-        /// <summary>
-        /// Обеспечивает быстрый доступ к корневому кадру приложения телефона.
-        /// </summary>
-        /// <returns>Корневой кадр приложения телефона.</returns>
         public static PhoneApplicationFrame RootFrame { get; private set; }
+        public static MainViewModel ViewModel { get; private set; }
 
-        /// <summary>
-        /// Конструктор объекта приложения.
-        /// </summary>
+        public static AuthKeyStorage Storage { get; private set; }
+        public static MtprotoTcpTransport Transport { get; private set; }
+        public static TelegramRpcEngine RpcEngine { get; private set; }
+        public static UpdatesService Updates { get; private set; }
+
+        public static event EventHandler<IncomingMessageEventArgs> LiveMessageReceived;
+        public static event EventHandler<OutboxReadEventArgs> LiveOutboxRead;
+
+        public static readonly Dictionary<long, string> UsersCache = new Dictionary<long, string>();
+
+        public static void CacheUser(long id, string name)
+        {
+            if (id == 0 || string.IsNullOrEmpty(name)) return;
+            lock (UsersCache)
+            {
+                UsersCache[id] = name;
+                UsersCache[Math.Abs(id)] = name;
+            }
+        }
+
+        public static string GetUserName(long id)
+        {
+            if (id == 0) return string.Empty;
+            lock (UsersCache)
+            {
+                string name;
+                if (UsersCache.TryGetValue(id, out name) || UsersCache.TryGetValue(Math.Abs(id), out name))
+                {
+                    return name;
+                }
+            }
+            return "Участник " + id;
+        }
+
         public App()
         {
-            // Глобальный обработчик неперехваченных исключений.
             UnhandledException += Application_UnhandledException;
 
-            // Стандартная инициализация XAML
             InitializeComponent();
-
-            // Инициализация телефона
             InitializePhoneApplication();
 
-            // Инициализация отображения языка
-            InitializeLanguage();
+            ViewModel = new MainViewModel();
+            Storage = new AuthKeyStorage();
+            Storage.Load();
 
-            // Отображение сведений о профиле графики во время отладки.
             if (Debugger.IsAttached)
             {
-                // Отображение текущих счетчиков частоты смены кадров.
                 Application.Current.Host.Settings.EnableFrameRateCounter = true;
-
-                // Отображение областей приложения, перерисовываемых в каждом кадре.
-                //Application.Current.Host.Settings.EnableRedrawRegions = true;
-
-                // Включение режима визуализации анализа нерабочего кода,
-                // для отображения областей страницы, переданных в GPU, с цветным наложением.
-                //Application.Current.Host.Settings.EnableCacheVisualization = true;
-
-                // Предотвратить выключение экрана в режиме отладчика путем отключения
-                // определения состояния простоя приложения.
-                // Внимание! Используйте только в режиме отладки. Приложение, в котором отключено обнаружение бездействия пользователя, будет продолжать работать
-                // и потреблять энергию батареи, когда телефон не будет использоваться.
-                PhoneApplicationService.Current.UserIdleDetectionMode = IdleDetectionMode.Disabled;
-            }
-
-        }
-
-        // Код, который выполняется, если при активации контракта, такого как открытие файла или выбор файлов в окне сохранения, возвращается 
-        // выбранный файл или другие возвращаемые значения
-        private void Application_ContractActivated(object sender, Windows.ApplicationModel.Activation.IActivatedEventArgs e)
-        {
-        }
-
-        // Код для выполнения при запуске приложения (например, из меню "Пуск")
-        // Этот код не будет выполняться при повторной активации приложения
-        private void Application_Launching(object sender, LaunchingEventArgs e)
-        {
-        }
-
-        // Код для выполнения при активации приложения (переводится в основной режим)
-        // Этот код не будет выполняться при первом запуске приложения
-        private void Application_Activated(object sender, ActivatedEventArgs e)
-        {
-        }
-
-        // Код для выполнения при деактивации приложения (отправляется в фоновый режим)
-        // Этот код не будет выполняться при закрытии приложения
-        private void Application_Deactivated(object sender, DeactivatedEventArgs e)
-        {
-        }
-
-        // Код для выполнения при закрытии приложения (например, при нажатии пользователем кнопки "Назад")
-        // Этот код не будет выполняться при деактивации приложения
-        private void Application_Closing(object sender, ClosingEventArgs e)
-        {
-        }
-
-        // Код для выполнения в случае ошибки навигации
-        private void RootFrame_NavigationFailed(object sender, NavigationFailedEventArgs e)
-        {
-            if (Debugger.IsAttached)
-            {
-                // Ошибка навигации; перейти в отладчик
-                Debugger.Break();
             }
         }
 
-        // Код для выполнения на необработанных исключениях
-        private void Application_UnhandledException(object sender, ApplicationUnhandledExceptionEventArgs e)
+        public static async Task EnsureTelegramConnectedAsync(Action<string> statusCallback = null)
         {
-            if (Debugger.IsAttached)
+            if (Transport == null || !Transport.IsConnected)
             {
-                // Произошло необработанное исключение; перейти в отладчик
-                Debugger.Break();
-            }
-        }
+                Storage.Load();
+                DataCenter dc = DataCenter.GetDc(Storage.CurrentDcId);
 
-        #region Инициализация приложения телефона
+                statusCallback?.Invoke(string.Format("Подключение к DC{0}...", dc.Id));
 
-        // Избегайте двойной инициализации
-        private bool phoneApplicationInitialized = false;
+                Transport = new MtprotoTcpTransport();
+                await Transport.ConnectAsync(dc);
 
-        // Не добавляйте в этот метод дополнительный код
-        private void InitializePhoneApplication()
-        {
-            if (phoneApplicationInitialized)
-                return;
-
-            // Создайте кадр, но не задавайте для него значение RootVisual; это позволит
-            // экрану-заставке оставаться активным, пока приложение не будет готово для визуализации.
-            RootFrame = new PhoneApplicationFrame();
-            RootFrame.Navigated += CompleteInitializePhoneApplication;
-
-            // Обработка сбоев навигации
-            RootFrame.NavigationFailed += RootFrame_NavigationFailed;
-
-            // Обработка запросов на сброс для очистки стека переходов назад
-            RootFrame.Navigated += CheckForResetNavigation;
-
-            // Обработка активации контракта, такого как открытие файла или выбор файлов в окне сохранения
-            PhoneApplicationService.Current.ContractActivated += Application_ContractActivated;
-
-            // Убедитесь, что инициализация не выполняется повторно
-            phoneApplicationInitialized = true;
-        }
-
-        // Не добавляйте в этот метод дополнительный код
-        private void CompleteInitializePhoneApplication(object sender, NavigationEventArgs e)
-        {
-            // Задайте корневой визуальный элемент для визуализации приложения
-            if (RootVisual != RootFrame)
-                RootVisual = RootFrame;
-
-            // Удалите этот обработчик, т.к. он больше не нужен
-            RootFrame.Navigated -= CompleteInitializePhoneApplication;
-        }
-
-        private void CheckForResetNavigation(object sender, NavigationEventArgs e)
-        {
-            // Если приложение получило навигацию "reset", необходимо проверить
-            // при следующей навигации, чтобы проверить, нужно ли выполнять сброс стека
-            if (e.NavigationMode == NavigationMode.Reset)
-                RootFrame.Navigated += ClearBackStackAfterReset;
-        }
-
-        private void ClearBackStackAfterReset(object sender, NavigationEventArgs e)
-        {
-            // Отменить регистрацию события, чтобы оно больше не вызывалось
-            RootFrame.Navigated -= ClearBackStackAfterReset;
-
-            // Очистка стека только для "новых" навигаций (вперед) и навигаций "обновления"
-            if (e.NavigationMode != NavigationMode.New && e.NavigationMode != NavigationMode.Refresh)
-                return;
-
-            // Очистка всего стека страницы для согласованности пользовательского интерфейса
-            while (RootFrame.RemoveBackEntry() != null)
-            {
-                ; // ничего не делать
-            }
-        }
-
-        #endregion
-
-        // Инициализация шрифта приложения и направления текста, как определено в локализованных строках ресурсов.
-        //
-        // Чтобы убедиться, что шрифт приложения соответствует поддерживаемым языкам, а
-        // FlowDirection для каждого из этих языков соответствует традиционному направлению, ResourceLanguage
-        // и ResourceFlowDirection необходимо инициализировать в каждом RESX-файле, чтобы эти значения совпадали с
-        // культурой файла. Пример:
-        //
-        // AppResources.es-ES.resx
-        //    Значение ResourceLanguage должно равняться "es-ES"
-        //    Значение ResourceFlowDirection должно равняться "LeftToRight"
-        //
-        // AppResources.ar-SA.resx
-        //     Значение ResourceLanguage должно равняться "ar-SA"
-        //     Значение ResourceFlowDirection должно равняться "RightToLeft"
-        //
-        // Дополнительные сведения о локализации приложений Windows Phone см. на странице http://go.microsoft.com/fwlink/?LinkId=262072.
-        //
-        private void InitializeLanguage()
-        {
-            try
-            {
-                // Задать шрифт в соответствии с отображаемым языком, определенным
-                // строкой ресурса ResourceLanguage для каждого поддерживаемого языка.
-                //
-                // Откат к шрифту нейтрального языка, если отображаемый
-                // язык телефона не поддерживается.
-                //
-                // Если возникла ошибка компилятора, ResourceLanguage отсутствует в
-                // файл ресурсов.
-                RootFrame.Language = XmlLanguage.GetLanguage(AppResources.ResourceLanguage);
-
-                // Установка FlowDirection для всех элементов в корневом кадре на основании
-                // строки ресурса ResourceFlowDirection для каждого
-                // поддерживаемого языка.
-                //
-                // Если возникла ошибка компилятора, ResourceFlowDirection отсутствует в
-                // файл ресурсов.
-                FlowDirection flow = (FlowDirection)Enum.Parse(typeof(FlowDirection), AppResources.ResourceFlowDirection);
-                RootFrame.FlowDirection = flow;
-            }
-            catch
-            {
-                // Если здесь перехвачено исключение, вероятнее всего это означает, что
-                // для ResourceLangauge неправильно задан код поддерживаемого языка
-                // или для ResourceFlowDirection задано значение, отличное от LeftToRight
-                // или RightToLeft.
-
-                if (Debugger.IsAttached)
+                if (!Storage.HasAuthKey)
                 {
-                    Debugger.Break();
+                    statusCallback?.Invoke("Генерация 2048-бит AuthKey...");
+                    var handshake = new AuthKeyHandshake(Transport);
+                    await handshake.ExecuteAsync(Storage);
                 }
 
-                throw;
+                RpcEngine = new TelegramRpcEngine(Transport, Storage);
+
+                statusCallback?.Invoke("Инициализация MTProto 2.0...");
+                byte[] configQuery;
+                using (var writer = new TlBinaryWriter())
+                {
+                    writer.WriteUInt32(0xc4f9186b);
+                    configQuery = writer.ToByteArray();
+                }
+
+                await RpcEngine.SendRpcQueryAsync(configQuery, wrapInitConnection: true);
+
+                Updates?.Dispose();
+                Updates = new UpdatesService(RpcEngine);
+                Updates.MessageReceived += OnGlobalMessageReceived;
+                Updates.OutboxRead += (s, e) => { LiveOutboxRead?.Invoke(s, e); };
+
+                Debug.WriteLine("[App] MTProto 2.0 с глобальной обработкой обновлений готов!");
             }
         }
+
+        private static void OnGlobalMessageReceived(object sender, IncomingMessageEventArgs e)
+        {
+            LiveMessageReceived?.Invoke(sender, e);
+
+            Deployment.Current.Dispatcher.BeginInvoke(() =>
+            {
+                long targetAbsId = Math.Abs(e.PeerId);
+
+                var existingDialog = ViewModel.Dialogs.FirstOrDefault(d =>
+                    d.Id == e.PeerId ||
+                    Math.Abs(d.Id) == targetAbsId);
+
+                int pinnedCount = ViewModel.Dialogs.Count(d => d.IsPinned);
+
+                if (existingDialog != null)
+                {
+                    existingDialog.LastMessage = e.Text;
+                    existingDialog.Date = e.Date;
+                    if (!e.IsOut) existingDialog.UnreadCount++;
+
+                    int oldIndex = ViewModel.Dialogs.IndexOf(existingDialog);
+                    int targetIndex = existingDialog.IsPinned ? 0 : pinnedCount;
+
+                    if (oldIndex != targetIndex && oldIndex >= 0)
+                    {
+                        ViewModel.Dialogs.RemoveAt(oldIndex);
+                        if (targetIndex > ViewModel.Dialogs.Count) targetIndex = ViewModel.Dialogs.Count;
+                        ViewModel.Dialogs.Insert(targetIndex, existingDialog);
+                    }
+                }
+                else
+                {
+                    string title = e.PeerType == 3 ? "Канал " + e.PeerId : (e.PeerType == 2 ? "Группа " + e.PeerId : "Чат " + e.PeerId);
+                    var newDialog = new ChatItemViewModel
+                    {
+                        Id = e.PeerId,
+                        PeerType = e.PeerType,
+                        Title = title,
+                        LastMessage = e.Text,
+                        Date = e.Date,
+                        UnreadCount = e.IsOut ? 0 : 1,
+                        AvatarInitials = "TG",
+                        IsPinned = false,
+                        IsChannel = (e.PeerType == 3)
+                    };
+
+                    int insertIndex = pinnedCount <= ViewModel.Dialogs.Count ? pinnedCount : ViewModel.Dialogs.Count;
+                    ViewModel.Dialogs.Insert(insertIndex, newDialog);
+                }
+
+                int totalUnread = ViewModel.Dialogs.Sum(d => d.UnreadCount);
+                var topChat = ViewModel.Dialogs.FirstOrDefault();
+                string senderName = topChat != null ? topChat.Title : "";
+                string lastMsg = topChat != null ? topChat.LastMessage : "";
+
+                TileService.UpdatePrimaryTile(totalUnread, senderName, lastMsg);
+            });
+        }
+
+        private void Application_Launching(object sender, LaunchingEventArgs e) { }
+        private void Application_Activated(object sender, ActivatedEventArgs e) { }
+        private void Application_Deactivated(object sender, DeactivatedEventArgs e) { }
+        private void Application_Closing(object sender, ClosingEventArgs e) { }
+
+        private void RootFrame_NavigationFailed(object sender, NavigationFailedEventArgs e)
+        {
+            if (Debugger.IsAttached) Debugger.Break();
+        }
+
+        private void Application_UnhandledException(object sender, ApplicationUnhandledExceptionEventArgs e)
+        {
+            if (Debugger.IsAttached) Debugger.Break();
+        }
+
+        #region Phone application initialization
+        private bool _phoneApplicationInitialized = false;
+
+        private void InitializePhoneApplication()
+        {
+            if (_phoneApplicationInitialized) return;
+
+            RootFrame = new TransitionFrame();
+            RootFrame.Navigated += CompleteInitializePhoneApplication;
+            RootFrame.NavigationFailed += RootFrame_NavigationFailed;
+
+            Microsoft.Phone.Controls.TiltEffect.SetIsTiltEnabled(RootFrame, true);
+
+            _phoneApplicationInitialized = true;
+        }
+
+        private void CompleteInitializePhoneApplication(object sender, NavigationEventArgs e)
+        {
+            if (RootVisual != RootFrame) RootVisual = RootFrame;
+            RootFrame.Navigated -= CompleteInitializePhoneApplication;
+        }
+        #endregion
     }
 }

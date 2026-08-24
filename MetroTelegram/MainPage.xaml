@@ -4,59 +4,242 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:phone="clr-namespace:Microsoft.Phone.Controls;assembly=Microsoft.Phone"
     xmlns:shell="clr-namespace:Microsoft.Phone.Shell;assembly=Microsoft.Phone"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
+    xmlns:toolkit="clr-namespace:Microsoft.Phone.Controls;assembly=Microsoft.Phone.Controls.Toolkit"
     FontFamily="{StaticResource PhoneFontFamilyNormal}"
     FontSize="{StaticResource PhoneFontSizeNormal}"
     Foreground="{StaticResource PhoneForegroundBrush}"
+    Background="{StaticResource OledPureBlackBrush}"
     SupportedOrientations="Portrait" Orientation="Portrait"
-    shell:SystemTray.IsVisible="True">
+    shell:SystemTray.IsVisible="True"
+    shell:SystemTray.Opacity="0.0">
 
-    <!--LayoutRoot представляет корневую сетку, где размещается все содержимое страницы-->
+    <toolkit:TransitionService.NavigationInTransition>
+        <toolkit:NavigationInTransition>
+            <toolkit:NavigationInTransition.Backward>
+                <toolkit:TurnstileTransition Mode="BackwardIn"/>
+            </toolkit:NavigationInTransition.Backward>
+            <toolkit:NavigationInTransition.Forward>
+                <toolkit:TurnstileTransition Mode="ForwardIn"/>
+            </toolkit:NavigationInTransition.Forward>
+        </toolkit:NavigationInTransition>
+    </toolkit:TransitionService.NavigationInTransition>
+    <toolkit:TransitionService.NavigationOutTransition>
+        <toolkit:NavigationOutTransition>
+            <toolkit:NavigationOutTransition.Backward>
+                <toolkit:TurnstileTransition Mode="BackwardOut"/>
+            </toolkit:NavigationOutTransition.Backward>
+            <toolkit:NavigationOutTransition.Forward>
+                <toolkit:TurnstileTransition Mode="ForwardOut"/>
+            </toolkit:NavigationOutTransition.Forward>
+        </toolkit:NavigationOutTransition>
+    </toolkit:TransitionService.NavigationOutTransition>
+
     <Grid x:Name="LayoutRoot" Background="Transparent">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+        <phone:Pivot Title="AMIGRAM" TitleTemplate="{StaticResource MetroPivotTitleTemplate}">
 
-        <!-- ПРИМЕЧАНИЕ О ЛОКАЛИЗАЦИИ:
-            Чтобы локализовать отображаемые строки, скопируйте их значения в соответствующим образом названные
-            ключи в файле ресурсов нейтрального языка приложения (AppResources.resx), а затем
-            замените жестко заданное текстовое значение между кавычками атрибутов
-            на выражение привязки, указывающее на имя соответствующей строки.
+            <phone:PivotItem Header="чаты">
+                <phone:LongListSelector 
+                    x:Name="ChatsList"
+                    ItemsSource="{Binding Dialogs}"
+                    SelectionChanged="ChatsList_SelectionChanged"
+                    Margin="0,0,-12,0">
+                    <phone:LongListSelector.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,12,22" Background="Transparent">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-            Пример:
+                                <Border Grid.Column="0" Width="54" Height="54" 
+                                        Background="{StaticResource PhoneAccentBrush}" 
+                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding AvatarInitials}" 
+                                               Foreground="White" 
+                                               FontFamily="Segoe UI Semibold" 
+                                               FontSize="20"
+                                               HorizontalAlignment="Center" 
+                                               VerticalAlignment="Center"/>
+                                </Border>
 
-                Text="{Binding Path=LocalizedResources.ApplicationTitle, Source={StaticResource LocalizedStrings}}"
+                                <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding Title}" 
+                                               Style="{StaticResource ChatTitleTextStyle}"/>
+                                    <TextBlock Text="{Binding LastMessage}" 
+                                               Style="{StaticResource ChatPreviewTextStyle}"/>
+                                </StackPanel>
 
-            Данная привязка указывает на строковый ресурс шаблона с именем "ApplicationTitle".
+                                <StackPanel Grid.Column="2" VerticalAlignment="Top" HorizontalAlignment="Right">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <TextBlock Text="&#xE141;" 
+                                                   FontFamily="Segoe UI Symbol" 
+                                                   FontSize="12" 
+                                                   Foreground="{StaticResource PhoneAccentBrush}"
+                                                   Visibility="{Binding PinnedVisibility}"
+                                                   Margin="0,0,4,0"/>
 
-            Добавление поддерживаемых языков на вкладку "Свойства проекта" создает
-            новый RESX-файл для каждого языка, в котором могут храниться переведенные значения
-            строк пользовательского интерфейса. Привязка в этих примерах вызывает отрисовку
-            значений атрибутов из RESX-файла, соответствующего
-            CurrentUICulture приложения во время выполнения.
-         -->
+                                        <TextBlock Text="{Binding FormattedDate}" 
+                                                   FontSize="12" 
+                                                   FontFamily="Segoe UI" 
+                                                   Foreground="{StaticResource PhoneSubtleForegroundBrush}"/>
+                                    </StackPanel>
 
-        <!--TitlePanel содержит имя приложения и заголовок страницы-->
-        <StackPanel x:Name="TitlePanel" Grid.Row="0" Margin="12,17,0,28">
-            <TextBlock Text="МОЕ ПРИЛОЖЕНИЕ" Style="{StaticResource PhoneTextNormalStyle}" Margin="12,0"/>
-            <TextBlock Text="имя страницы" Margin="9,-7,0,0" Style="{StaticResource PhoneTextTitle1Style}"/>
-        </StackPanel>
+                                    <Border Background="{StaticResource PhoneAccentBrush}" 
+                                            Margin="0,6,0,0"
+                                            Padding="6,2,6,2"
+                                            MinHeight="20"
+                                            MinWidth="20"
+                                            HorizontalAlignment="Right"
+                                            Visibility="{Binding UnreadVisibility}">
+                                        <TextBlock Text="{Binding UnreadCount}" 
+                                                   FontSize="11" 
+                                                   FontFamily="Segoe UI Bold" 
+                                                   Foreground="White" 
+                                                   HorizontalAlignment="Center" 
+                                                   VerticalAlignment="Center"/>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </phone:LongListSelector.ItemTemplate>
+                </phone:LongListSelector>
+            </phone:PivotItem>
 
-        <!--ContentPanel — поместите здесь дополнительное содержимое-->
-        <Grid x:Name="ContentPanel" Grid.Row="1" Margin="12,0,12,0">
+            <phone:PivotItem Header="контакты">
+                <phone:LongListSelector 
+                    x:Name="ContactsList"
+                    ItemsSource="{Binding GroupedContacts}"
+                    IsGroupingEnabled="True"
+                    HideEmptyGroups="True"
+                    SelectionChanged="ContactsList_SelectionChanged"
+                    Margin="0,0,-12,0">
+                    <phone:LongListSelector.GroupHeaderTemplate>
+                        <DataTemplate>
+                            <Border Background="Transparent" Margin="0,12,0,8">
+                                <Border Background="{StaticResource PhoneAccentBrush}" 
+                                        Width="44" Height="44" 
+                                        HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding Key}" 
+                                               Foreground="White" 
+                                               FontFamily="Segoe UI Semibold" 
+                                               FontSize="22" 
+                                               HorizontalAlignment="Center" 
+                                               VerticalAlignment="Center"/>
+                                </Border>
+                            </Border>
+                        </DataTemplate>
+                    </phone:LongListSelector.GroupHeaderTemplate>
+                    <phone:LongListSelector.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,12,18" Background="Transparent">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="54"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
 
-        </Grid>
+                                <Border Grid.Column="0" Width="44" Height="44" 
+                                        Background="{StaticResource SubtleGrayBrush}" 
+                                        HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Initials}" 
+                                               Foreground="{StaticResource PhoneForegroundBrush}" 
+                                               FontFamily="Segoe UI" 
+                                               FontSize="16"
+                                               HorizontalAlignment="Center" 
+                                               VerticalAlignment="Center"/>
+                                </Border>
 
-        <!--Раскомментируйте, чтобы увидеть сетку выравнивания и выровнять
-            элементы управления по общим границам.  Верхнее поле изображения равно -32 пикселя, чтобы
-            осталось место для области уведомлений. Установите его равным 0 (или вообще удалите поле),
-            если область уведомлений скрыта.
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding FullName}" 
+                                               Style="{StaticResource ChatTitleTextStyle}" 
+                                               FontSize="20"/>
+                                    <TextBlock Text="{Binding Status}" 
+                                               FontSize="13" 
+                                               Foreground="{StaticResource PhoneSubtleForegroundBrush}"/>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </phone:LongListSelector.ItemTemplate>
+                </phone:LongListSelector>
+            </phone:PivotItem>
 
-            Перед сдачей приложения удалите этот код XAML и само изображение.-->
-        <!--<Image Source="/Assets/AlignmentGrid.png" VerticalAlignment="Top" Height="800" Width="480" Margin="0,-32,0,0" Grid.Row="0" Grid.RowSpan="2" IsHitTestVisible="False" />-->
+            <phone:PivotItem Header="настройки">
+                <ScrollViewer Margin="0,0,-12,0">
+                    <StackPanel Margin="0,0,12,32">
+                        <Grid Margin="0,0,0,28">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="74"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Width="68" Height="68" 
+                                    Background="{StaticResource PhoneAccentBrush}" 
+                                    HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Settings.AvatarInitials}" 
+                                           Foreground="White" 
+                                           FontFamily="Segoe UI Semibold" 
+                                           FontSize="26"
+                                           HorizontalAlignment="Center" 
+                                           VerticalAlignment="Center"/>
+                            </Border>
+
+                            <StackPanel Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Settings.FullName}" 
+                                           FontFamily="Segoe UI Semibold" 
+                                           FontSize="24"
+                                           Foreground="{StaticResource PhoneForegroundBrush}"
+                                           TextTrimming="WordEllipsis"/>
+                                <TextBlock Text="{Binding Settings.PhoneNumber}" 
+                                           FontFamily="Segoe UI" 
+                                           FontSize="16" 
+                                           Foreground="{StaticResource PhoneSubtleForegroundBrush}"
+                                           Margin="0,2,0,0"/>
+                                <TextBlock Text="{Binding Settings.UserIdString}" 
+                                           FontFamily="Segoe UI" 
+                                           FontSize="12" 
+                                           Foreground="{StaticResource PhoneSubtleForegroundBrush}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="СЕТЬ И MTPROTO 2.0" 
+                                   FontFamily="Segoe UI Semibold" 
+                                   FontSize="13" 
+                                   Foreground="{StaticResource PhoneAccentBrush}" 
+                                   Margin="0,0,0,10"/>
+
+                        <Border Background="{StaticResource SubtleGrayBrush}" Padding="16,12,16,12" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Активный дата-центр" FontSize="13" Foreground="{StaticResource PhoneSubtleForegroundBrush}"/>
+                                <TextBlock Text="{Binding Settings.DcInfo}" FontSize="18" FontFamily="Segoe UI Semibold" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{StaticResource SubtleGrayBrush}" Padding="16,12,16,12" Margin="0,0,0,24">
+                            <StackPanel>
+                                <TextBlock Text="Сессионный AuthKey ID" FontSize="13" Foreground="{StaticResource PhoneSubtleForegroundBrush}"/>
+                                <TextBlock Text="{Binding Settings.AuthKeyInfo}" FontSize="15" FontFamily="Segoe UI" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button x:Name="ClearCacheButton" 
+                                Content="очистить кэш памяти" 
+                                Click="ClearCacheButton_Click"
+                                FontFamily="Segoe UI"
+                                FontSize="17"
+                                Margin="-12,0,-12,8"/>
+
+                        <Button x:Name="LogoutButton" 
+                                Content="выйти из аккаунта" 
+                                Click="LogoutButton_Click"
+                                Foreground="#FFFF453A"
+                                BorderBrush="#FFFF453A"
+                                FontFamily="Segoe UI Semibold"
+                                FontSize="17"
+                                Margin="-12,0,-12,0"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </phone:PivotItem>
+        </phone:Pivot>
     </Grid>
 
 </phone:PhoneApplicationPage>

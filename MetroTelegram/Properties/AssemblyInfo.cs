@@ -6,11 +6,11 @@ using System.Resources;
 // Управление общими сведениями о сборке осуществляется с помощью следующего 
 // набора атрибутов. Измените значения этих атрибутов для изменения
 // сведений о сборке.
-[assembly: AssemblyTitle("MetroTelegram")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("Amigram")]
+[assembly: AssemblyDescription("Native Telegram MTProto 2.0 Client for Windows Phone 8.1")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("MetroTelegram")]
+[assembly: AssemblyCompany("tallfly")]
+[assembly: AssemblyProduct("Amigram")]
 [assembly: AssemblyCopyright("Copyright ©  2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
