@@ -1,11 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using MetroTelegram.ViewModels;
 
 namespace MetroTelegram.TL
 {
@@ -26,6 +24,12 @@ namespace MetroTelegram.TL
         public int MaxId { get; set; }
     }
 
+    public class UserTypingEventArgs : EventArgs
+    {
+        public long PeerId { get; set; }
+        public long UserId { get; set; }
+    }
+
     public class UpdatesService : IDisposable
     {
         private readonly TelegramRpcEngine _rpcEngine;
@@ -34,6 +38,7 @@ namespace MetroTelegram.TL
 
         public event EventHandler<IncomingMessageEventArgs> MessageReceived;
         public event EventHandler<OutboxReadEventArgs> OutboxRead;
+        public event EventHandler<UserTypingEventArgs> UserTyping;
 
         public UpdatesService(TelegramRpcEngine rpcEngine)
         {
@@ -57,7 +62,6 @@ namespace MetroTelegram.TL
                 }
 
                 await _rpcEngine.SendRpcQueryAsync(queryBytes, wrapInitConnection: false, timeoutMs: 10000);
-                Debug.WriteLine("[UpdatesService] Keep-Alive (updates.getState) OK");
             }
             catch { }
         }
@@ -176,6 +180,18 @@ namespace MetroTelegram.TL
                     {
                         ReadOutboxChannelSafe(reader);
                     }
+                    else if (constructor == 0xc01e857f)
+                    {
+                        long userId = ReadInt64Safe(reader);
+                        UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = userId, UserId = userId });
+                    }
+                    else if (constructor == 0x9a65ea1f)
+                    {
+                        long chatId = ReadInt64Safe(reader);
+                        int pType;
+                        long fromId = ReadPeer(reader, out pType);
+                        UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = chatId, UserId = fromId });
+                    }
                     else if (constructor == 0x78d4dec1)
                     {
                         uint updateCons = reader.ReadUInt32();
@@ -187,6 +203,27 @@ namespace MetroTelegram.TL
                         else if (updateCons == 0xb75f99a9)
                         {
                             ReadOutboxChannelSafe(reader);
+                        }
+                        else if (updateCons == 0xc01e857f)
+                        {
+                            long userId = ReadInt64Safe(reader);
+                            UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = userId, UserId = userId });
+                        }
+                        else if (updateCons == 0x9a65ea1f)
+                        {
+                            long chatId = ReadInt64Safe(reader);
+                            int pType;
+                            long fromId = ReadPeer(reader, out pType);
+                            UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = chatId, UserId = fromId });
+                        }
+                        else if (updateCons == 0x8c88c923)
+                        {
+                            int flags = ReadInt32Safe(reader);
+                            if ((flags & 1) != 0) ReadInt32Safe(reader);
+                            long channelId = ReadInt64Safe(reader);
+                            int pType;
+                            long fromId = ReadPeer(reader, out pType);
+                            UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = channelId, UserId = fromId });
                         }
                         else
                         {
@@ -252,7 +289,7 @@ namespace MetroTelegram.TL
 
                     if (id > 0 && id < 100000000000L && !string.IsNullOrEmpty(fullName))
                     {
-                        MetroTelegram.App.CacheUser(id, fullName);
+                        App.CacheUser(id, fullName);
                         return;
                     }
                     throw new Exception();
@@ -272,7 +309,7 @@ namespace MetroTelegram.TL
 
                     if (id > 0 && id < 100000000000L && !string.IsNullOrEmpty(fullName))
                     {
-                        MetroTelegram.App.CacheUser(id, fullName);
+                        App.CacheUser(id, fullName);
                     }
                 }
             }
@@ -287,7 +324,7 @@ namespace MetroTelegram.TL
                 {
                     long fId = ReadInt64Safe(reader);
                     string fTitle = ReadStringSafe(reader);
-                    if (fId > 0 && !string.IsNullOrEmpty(fTitle)) MetroTelegram.App.CacheUser(fId, fTitle);
+                    if (fId > 0 && !string.IsNullOrEmpty(fTitle)) App.CacheUser(fId, fTitle);
                     return;
                 }
                 if (constructor == 0x29562865) return;
@@ -305,7 +342,7 @@ namespace MetroTelegram.TL
 
                     if (id > 0 && !string.IsNullOrEmpty(title) && title.Length < 150)
                     {
-                        MetroTelegram.App.CacheUser(id, title);
+                        App.CacheUser(id, title);
                         return;
                     }
                     throw new Exception();
@@ -348,6 +385,27 @@ namespace MetroTelegram.TL
                         else if (cons == 0xb75f99a9)
                         {
                             ReadOutboxChannelSafe(reader);
+                        }
+                        else if (cons == 0xc01e857f)
+                        {
+                            long userId = ReadInt64Safe(reader);
+                            UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = userId, UserId = userId });
+                        }
+                        else if (cons == 0x9a65ea1f)
+                        {
+                            long chatId = ReadInt64Safe(reader);
+                            int pType;
+                            long fromId = ReadPeer(reader, out pType);
+                            UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = chatId, UserId = fromId });
+                        }
+                        else if (cons == 0x8c88c923)
+                        {
+                            int flags = ReadInt32Safe(reader);
+                            if ((flags & 1) != 0) ReadInt32Safe(reader);
+                            long channelId = ReadInt64Safe(reader);
+                            int pType;
+                            long fromId = ReadPeer(reader, out pType);
+                            UserTyping?.Invoke(this, new UserTypingEventArgs { PeerId = channelId, UserId = fromId });
                         }
                         else if (cons == 0x215c4438 || cons == 0x83314057 || cons == 0x93b272a7 || cons == 0x2e56d744 ||
                                  cons == 0xd23c81a3 || cons == 0x3ff6ecb0 || cons == 0xb1b8cc83 || cons == 0xabb5f120)

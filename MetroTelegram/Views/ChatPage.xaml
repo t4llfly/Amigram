@@ -48,7 +48,7 @@
                            FontFamily="Segoe UI Light" 
                            FontSize="32" 
                            TextTrimming="WordEllipsis"
-                           Margin="0,2,0,0"/>
+                           Margin="0,8,0,0"/>
 
                 <TextBlock x:Name="ChatSubtitleTextBlock" 
                            Text="в сети" 

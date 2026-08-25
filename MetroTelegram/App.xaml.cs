@@ -26,6 +26,7 @@ namespace MetroTelegram
 
         public static event EventHandler<IncomingMessageEventArgs> LiveMessageReceived;
         public static event EventHandler<OutboxReadEventArgs> LiveOutboxRead;
+        public static event EventHandler<UserTypingEventArgs> LiveUserTyping;
 
         public static readonly Dictionary<long, string> UsersCache = new Dictionary<long, string>();
 
@@ -95,6 +96,7 @@ namespace MetroTelegram
                 Updates = new UpdatesService(RpcEngine);
                 Updates.MessageReceived += OnGlobalMessageReceived;
                 Updates.OutboxRead += (s, e) => { LiveOutboxRead?.Invoke(s, e); };
+                Updates.UserTyping += (s, e) => { LiveUserTyping?.Invoke(s, e); };
 
                 statusCallback?.Invoke("Инициализация MTProto 2.0...");
                 byte[] configQuery;

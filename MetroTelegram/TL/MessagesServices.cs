@@ -65,6 +65,27 @@ namespace MetroTelegram.TL
             return randomId;
         }
 
+        public async Task SetTypingAsync(long peerId, long accessHash, int peerType)
+        {
+            try
+            {
+                byte[] queryBytes;
+                using (var writer = new TlBinaryWriter())
+                {
+                    writer.WriteUInt32(0x58943ee2);
+                    writer.WriteInt32(0);
+                    WriteInputPeer(writer, peerId, accessHash, peerType);
+                    writer.WriteUInt32(0x16bf744e);
+
+                    queryBytes = writer.ToByteArray();
+                }
+
+                await _rpcEngine.SendRpcQueryAsync(queryBytes, wrapInitConnection: false, timeoutMs: 5000);
+                Debug.WriteLine(string.Format("[MessagesService] Статус 'печатает...' отправлен для Peer {0}", peerId));
+            }
+            catch { }
+        }
+
         private void WriteInputPeer(TlBinaryWriter writer, long peerId, long accessHash, int peerType)
         {
             long rawId = Math.Abs(peerId);
@@ -321,7 +342,7 @@ namespace MetroTelegram.TL
                                 for (int v = 0; v < vCount; v++)
                                 {
                                     ReadUInt32Safe(reader);
-                                    ReadInt32Safe(reader);
+                                    int vf = ReadInt32Safe(reader);
                                     ReadStringSafe(reader);
                                     ReadDoubleSafe(reader);
                                 }

@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
+using System.Windows.Threading;
 using Microsoft.Phone.Controls;
 using Microsoft.Phone.Shell;
 using Microsoft.Phone.Tasks;
@@ -25,6 +26,10 @@ namespace MetroTelegram.Views
         private MediaUploadService _uploadService;
         private PhotoChooserTask _photoChooser;
 
+        private DispatcherTimer _typingResetTimer;
+        private string _originalSubtitle = "был(а) недавно";
+        private DateTime _lastTypingSent = DateTime.MinValue;
+
         public ChatViewModel ViewModel { get; private set; }
 
         public ChatPage()
@@ -40,6 +45,15 @@ namespace MetroTelegram.Views
             _photoChooser = new PhotoChooserTask();
             _photoChooser.ShowCamera = true;
             _photoChooser.Completed += PhotoChooser_Completed;
+
+            _typingResetTimer = new DispatcherTimer();
+            _typingResetTimer.Interval = TimeSpan.FromSeconds(5);
+            _typingResetTimer.Tick += (s, e) =>
+            {
+                _typingResetTimer.Stop();
+                ChatSubtitleTextBlock.Text = _originalSubtitle;
+                ChatSubtitleTextBlock.Foreground = (Brush)Application.Current.Resources["PhoneSubtleForegroundBrush"];
+            };
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -51,6 +65,9 @@ namespace MetroTelegram.Views
 
             App.LiveOutboxRead -= OnLiveOutboxRead;
             App.LiveOutboxRead += OnLiveOutboxRead;
+
+            App.LiveUserTyping -= OnLiveUserTyping;
+            App.LiveUserTyping += OnLiveUserTyping;
 
             if (e.NavigationMode == NavigationMode.Back && ViewModel.Messages.Count > 0)
             {
@@ -73,16 +90,18 @@ namespace MetroTelegram.Views
 
                 if (ViewModel.PeerType == 3)
                 {
-                    ChatSubtitleTextBlock.Text = "канал";
+                    _originalSubtitle = "канал";
                 }
                 else if (ViewModel.PeerType == 2)
                 {
-                    ChatSubtitleTextBlock.Text = "групповой чат";
+                    _originalSubtitle = "групповой чат";
                 }
                 else
                 {
-                    ChatSubtitleTextBlock.Text = "был(а) недавно";
+                    _originalSubtitle = "был(а) недавно";
                 }
+                ChatSubtitleTextBlock.Text = _originalSubtitle;
+                ChatSubtitleTextBlock.Foreground = (Brush)Application.Current.Resources["PhoneSubtleForegroundBrush"];
 
                 var currentDialog = App.ViewModel.Dialogs.FirstOrDefault(d =>
                     d.Id == ViewModel.PeerId || Math.Abs(d.Id) == Math.Abs(ViewModel.PeerId));
@@ -109,6 +128,8 @@ namespace MetroTelegram.Views
             {
                 App.LiveMessageReceived -= OnLiveMessageReceived;
                 App.LiveOutboxRead -= OnLiveOutboxRead;
+                App.LiveUserTyping -= OnLiveUserTyping;
+                _typingResetTimer.Stop();
             }
         }
 
@@ -190,6 +211,10 @@ namespace MetroTelegram.Views
             {
                 Dispatcher.BeginInvoke(() =>
                 {
+                    _typingResetTimer.Stop();
+                    ChatSubtitleTextBlock.Text = _originalSubtitle;
+                    ChatSubtitleTextBlock.Foreground = (Brush)Application.Current.Resources["PhoneSubtleForegroundBrush"];
+
                     if (e.MsgId != 0 && ViewModel.Messages.Any(m => m.Id == e.MsgId))
                         return;
 
@@ -221,6 +246,28 @@ namespace MetroTelegram.Views
                         await App.Updates.ReadHistoryAsync(ViewModel.PeerId, ViewModel.AccessHash, ViewModel.PeerType, (int)e.MsgId);
                     });
                 }
+            }
+        }
+
+        private void OnLiveUserTyping(object sender, UserTypingEventArgs e)
+        {
+            if (Math.Abs(e.PeerId) == Math.Abs(ViewModel.PeerId))
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    string typingText = "печатает...";
+                    if (ViewModel.PeerType == 2 || ViewModel.PeerType == 3)
+                    {
+                        string name = App.GetUserName(e.UserId);
+                        typingText = string.Format("{0} печатает...", name);
+                    }
+
+                    ChatSubtitleTextBlock.Text = typingText;
+                    ChatSubtitleTextBlock.Foreground = (Brush)Application.Current.Resources["PhoneAccentBrush"];
+
+                    _typingResetTimer.Stop();
+                    _typingResetTimer.Start();
+                });
             }
         }
 
@@ -272,6 +319,33 @@ namespace MetroTelegram.Views
             catch (Exception ex)
             {
                 MessageBox.Show("Не удалось отправить: " + ex.Message, "Ошибка отправки", MessageBoxButton.OK);
+            }
+        }
+
+        private void MessageInputBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                SendButton_Click(this, null);
+            }
+            else
+            {
+                SendTypingStatusIfNeeded();
+            }
+        }
+
+        private void SendTypingStatusIfNeeded()
+        {
+            if ((DateTime.Now - _lastTypingSent).TotalSeconds > 4.5)
+            {
+                _lastTypingSent = DateTime.Now;
+                Task.Run(async () =>
+                {
+                    if (_messagesService != null)
+                    {
+                        await _messagesService.SetTypingAsync(ViewModel.PeerId, ViewModel.AccessHash, ViewModel.PeerType);
+                    }
+                });
             }
         }
 
@@ -498,14 +572,6 @@ namespace MetroTelegram.Views
 
                     NavigationService.Navigate(new Uri(uri, UriKind.Relative));
                 }
-            }
-        }
-
-        private void MessageInputBox_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter)
-            {
-                SendButton_Click(this, null);
             }
         }
 
