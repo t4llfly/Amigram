@@ -337,12 +337,13 @@ namespace MetroTelegram.TL
                     int flags = ReadInt32Safe(reader);
                     int flags2 = ReadInt32Safe(reader);
                     long id = ReadInt64Safe(reader);
-                    if (!isGroup && (flags & 8192) != 0) ReadInt64Safe(reader);
+                    long accessHash = (!isGroup && (flags & 8192) != 0) ? ReadInt64Safe(reader) : 0;
                     string title = ReadStringSafe(reader);
 
                     if (id > 0 && !string.IsNullOrEmpty(title) && title.Length < 150)
                     {
-                        App.CacheUser(id, title);
+                        MetroTelegram.App.CacheUser(id, title);
+                        if (accessHash != 0) MetroTelegram.App.CacheAccessHash(id, accessHash);
                         return;
                     }
                     throw new Exception();

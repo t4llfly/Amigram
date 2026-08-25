@@ -41,21 +41,23 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" Background="#0C0C0C" Padding="20,18,20,12" Margin="0,0,0,4">
+        <Border Grid.Row="0" Padding="20,18,20,12" Margin="0,0,0,4"
+        Tap="ChatHeader_Tap"
+        toolkit:TiltEffect.IsTiltEnabled="True">
             <StackPanel>
                 <TextBlock x:Name="ChatTitleTextBlock" 
-                           Text="Диалог" 
-                           FontFamily="Segoe UI Light" 
-                           FontSize="32" 
-                           TextTrimming="WordEllipsis"
-                           Margin="0,8,0,0"/>
+                   Text="Диалог" 
+                   FontFamily="Segoe UI Light" 
+                   FontSize="32" 
+                   TextTrimming="WordEllipsis"
+                   Margin="0,8,0,0"/>
 
                 <TextBlock x:Name="ChatSubtitleTextBlock" 
-                           Text="в сети" 
-                           FontFamily="Segoe UI" 
-                           FontSize="13" 
-                           Foreground="{StaticResource PhoneSubtleForegroundBrush}"
-                           Margin="0,1,0,0"/>
+                   Text="в сети" 
+                   FontFamily="Segoe UI" 
+                   FontSize="13" 
+                   Foreground="{StaticResource PhoneSubtleForegroundBrush}"
+                   Margin="0,1,0,0"/>
             </StackPanel>
         </Border>
 

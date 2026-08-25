@@ -106,7 +106,7 @@ namespace MetroTelegram.TL
                 }
                 else
                 {
-                    writer.WriteUInt32(0x35a956c2);
+                    writer.WriteUInt32(0x35a95cb9);
                     writer.WriteInt64(rawId);
                 }
             }

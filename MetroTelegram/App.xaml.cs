@@ -29,6 +29,7 @@ namespace MetroTelegram
         public static event EventHandler<UserTypingEventArgs> LiveUserTyping;
 
         public static readonly Dictionary<long, string> UsersCache = new Dictionary<long, string>();
+        public static readonly Dictionary<long, long> AccessHashCache = new Dictionary<long, long>();
 
         public static void CacheUser(long id, string name)
         {
@@ -37,6 +38,21 @@ namespace MetroTelegram
             {
                 UsersCache[id] = name;
                 UsersCache[Math.Abs(id)] = name;
+            }
+        }
+
+        public static void CacheAccessHash(long id, long accessHash)
+        {
+            if (id == 0 || accessHash == 0) return;
+            lock (AccessHashCache) { AccessHashCache[id] = accessHash; }
+        }
+
+        public static long GetAccessHash(long id)
+        {
+            lock (AccessHashCache)
+            {
+                long hash;
+                return AccessHashCache.TryGetValue(id, out hash) ? hash : 0;
             }
         }
 
@@ -148,6 +164,7 @@ namespace MetroTelegram
                     var newDialog = new ChatItemViewModel
                     {
                         Id = e.PeerId,
+                        AccessHash = App.GetAccessHash(e.PeerId),
                         PeerType = e.PeerType,
                         Title = title,
                         LastMessage = e.Text,

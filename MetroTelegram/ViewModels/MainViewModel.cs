@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Media.Imaging;
 
 namespace MetroTelegram.ViewModels
 {
@@ -16,6 +17,25 @@ namespace MetroTelegram.ViewModels
         }
 
         public long AccessHash { get; set; }
+        public long PhotoId { get; set; }
+
+        private BitmapImage _avatarImage;
+        public BitmapImage AvatarImage
+        {
+            get { return _avatarImage; }
+            set
+            {
+                _avatarImage = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasAvatarImage));
+                OnPropertyChanged(nameof(AvatarImageVisibility));
+                OnPropertyChanged(nameof(AvatarInitialsVisibility));
+            }
+        }
+
+        public bool HasAvatarImage => AvatarImage != null;
+        public Visibility AvatarImageVisibility => HasAvatarImage ? Visibility.Visible : Visibility.Collapsed;
+        public Visibility AvatarInitialsVisibility => !HasAvatarImage ? Visibility.Visible : Visibility.Collapsed;
 
         private int _peerType;
         public int PeerType

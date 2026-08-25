@@ -21,6 +21,101 @@ namespace MetroTelegram.TL
             _defaultRpcEngine = rpcEngine;
         }
 
+        public async Task<byte[]> LoadAvatarBytesAsync(long peerId, long accessHash, int peerType, long photoId)
+        {
+            if (photoId == 0 || peerId == 0) return null;
+
+            string cacheKey = string.Format("avatar_{0}_{1}", peerId, photoId);
+            lock (_rawImageCache)
+            {
+                if (_rawImageCache.ContainsKey(cacheKey))
+                    return _rawImageCache[cacheKey];
+            }
+
+            TelegramRpcEngine currentEngine = _defaultRpcEngine;
+
+            while (true)
+            {
+                try
+                {
+                    byte[] queryBytes;
+                    using (var writer = new TlBinaryWriter())
+                    {
+                        writer.WriteUInt32(0xbe5335be);
+                        writer.WriteInt32(0);
+
+                        writer.WriteUInt32(0x37257e99);
+                        writer.WriteInt32(0);
+
+                        WriteInputPeer(writer, peerId, accessHash, peerType);
+                        writer.WriteInt64(photoId);
+
+                        writer.WriteInt64(0L);
+                        writer.WriteInt32(65536);
+
+                        queryBytes = writer.ToByteArray();
+                    }
+
+                    byte[] response = await currentEngine.SendRpcQueryAsync(queryBytes, wrapInitConnection: false, timeoutMs: 10000);
+                    byte[] imageBytes = ParseFileResponse(response);
+
+                    if (imageBytes != null && imageBytes.Length > 0)
+                    {
+                        lock (_rawImageCache)
+                        {
+                            _rawImageCache[cacheKey] = imageBytes;
+                        }
+                        Debug.WriteLine(string.Format("[MediaService] Аватар для {0} успешно загружен ({1} байт)", peerId, imageBytes.Length));
+                        return imageBytes;
+                    }
+
+                    return null;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    if (ex.Message.Contains("FILE_MIGRATE_"))
+                    {
+                        int targetDc = ExtractTargetDc(ex.Message);
+                        Debug.WriteLine(string.Format("[MediaService] Аватар {0} лежит на DC{1}. Подключение...", peerId, targetDc));
+
+                        currentEngine = await GetOrCreateDcEngineAsync(targetDc);
+                        continue;
+                    }
+
+                    Debug.WriteLine(string.Format("[MediaService] Ошибка аватара {0}: {1}", peerId, ex.Message));
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(string.Format("[MediaService] Ошибка сети аватара {0}: {1}", peerId, ex.Message));
+                    return null;
+                }
+            }
+        }
+
+        private void WriteInputPeer(TlBinaryWriter writer, long peerId, long accessHash, int peerType)
+        {
+            long rawId = Math.Abs(peerId);
+
+            if (peerType == 1)
+            {
+                writer.WriteUInt32(0xdde8a54c);
+                writer.WriteInt64(rawId);
+                writer.WriteInt64(accessHash);
+            }
+            else if (peerType == 2)
+            {
+                writer.WriteUInt32(0x35a956c2);
+                writer.WriteInt64(rawId);
+            }
+            else
+            {
+                writer.WriteUInt32(0x27bcbbfc);
+                writer.WriteInt64(rawId);
+                writer.WriteInt64(accessHash);
+            }
+        }
+
         public async Task<byte[]> LoadPhotoBytesAsync(long photoId, long accessHash, byte[] fileReference, string thumbSize = "m")
         {
             if (photoId == 0 || fileReference == null || fileReference.Length == 0)

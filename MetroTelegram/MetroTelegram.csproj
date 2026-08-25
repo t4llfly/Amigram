@@ -119,6 +119,7 @@
     <Compile Include="TL\MediaService.cs" />
     <Compile Include="TL\MediaUploadService.cs" />
     <Compile Include="TL\MessagesServices.cs" />
+    <Compile Include="TL\ProfileService.cs" />
     <Compile Include="TL\TelegramRpcEngine.cs" />
     <Compile Include="TL\TlBinaryReader.cs" />
     <Compile Include="TL\TlBinaryWriter.cs" />
@@ -128,6 +129,7 @@
     <Compile Include="Transport\MtprotoTcpTransport.cs" />
     <Compile Include="ViewModels\ChatViewModel.cs" />
     <Compile Include="ViewModels\MainViewModel.cs" />
+    <Compile Include="ViewModels\ProfileViewModel.cs" />
     <Compile Include="ViewModels\SettingsViewModel.cs" />
     <Compile Include="Views\AuthPage.xaml.cs">
       <DependentUpon>AuthPage.xaml</DependentUpon>
@@ -137,6 +139,9 @@
     </Compile>
     <Compile Include="Views\ImageViewerPage.xaml.cs">
       <DependentUpon>ImageViewerPage.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ProfilePage.xaml.cs">
+      <DependentUpon>ProfilePage.xaml</DependentUpon>
     </Compile>
   </ItemGroup>
   <ItemGroup>
@@ -157,6 +162,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\ImageViewerPage.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\ProfilePage.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

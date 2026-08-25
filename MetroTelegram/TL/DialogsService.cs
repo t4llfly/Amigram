@@ -11,6 +11,7 @@ namespace MetroTelegram.TL
     {
         public long Id { get; set; }
         public long AccessHash { get; set; }
+        public long PhotoId { get; set; }
         public string Title { get; set; }
         public string Initials { get; set; }
         public bool IsChannel { get; set; }
@@ -178,6 +179,7 @@ namespace MetroTelegram.TL
                 {
                     Id = dialog.PeerId,
                     AccessHash = peerInfo != null ? peerInfo.AccessHash : 0,
+                    PhotoId = peerInfo != null ? peerInfo.PhotoId : 0,
                     PeerType = dialog.PeerType,
                     IsPinned = dialog.IsPinned,
                     Title = title,
@@ -212,13 +214,26 @@ namespace MetroTelegram.TL
                 string firstName = ((flags & 2) != 0) ? ReadStringSafe(reader) : "";
                 string lastName = ((flags & 4) != 0) ? ReadStringSafe(reader) : "";
                 string username = ((flags & 8) != 0) ? ReadStringSafe(reader) : "";
+                string phone = ((flags & 16) != 0) ? ReadStringSafe(reader) : "";
+
+                long photoId = 0;
+                // flags.5 = photo (userProfilePhoto#82d1f706)
+                if ((flags & 32) != 0)
+                {
+                    uint photoCons = ReadUInt32Safe(reader);
+                    if (photoCons == 0x82d1f706)
+                    {
+                        int pFlags = ReadInt32Safe(reader);
+                        photoId = ReadInt64Safe(reader); // photo_id
+                    }
+                }
 
                 if (id > 0 && id < 100000000000L)
                 {
                     string fullName = (firstName + " " + lastName).Trim();
                     if (string.IsNullOrEmpty(fullName)) fullName = username;
                     if (string.IsNullOrEmpty(fullName)) fullName = "Пользователь " + id;
-                    return new PeerInfo { Id = id, AccessHash = accessHash, Title = fullName, Initials = GetInitials(fullName) };
+                    return new PeerInfo { Id = id, AccessHash = accessHash, PhotoId = photoId, Title = fullName, Initials = GetInitials(fullName) };
                 }
             }
             catch { }
@@ -233,13 +248,25 @@ namespace MetroTelegram.TL
                 string firstName = ((flags & 2) != 0) ? ReadStringSafe(reader) : "";
                 string lastName = ((flags & 4) != 0) ? ReadStringSafe(reader) : "";
                 string username = ((flags & 8) != 0) ? ReadStringSafe(reader) : "";
+                string phone = ((flags & 16) != 0) ? ReadStringSafe(reader) : "";
+
+                long photoId = 0;
+                if ((flags & 32) != 0)
+                {
+                    uint photoCons = ReadUInt32Safe(reader);
+                    if (photoCons == 0x82d1f706)
+                    {
+                        int pFlags = ReadInt32Safe(reader);
+                        photoId = ReadInt64Safe(reader);
+                    }
+                }
 
                 if (id > 0 && id < 100000000000L)
                 {
                     string fullName = (firstName + " " + lastName).Trim();
                     if (string.IsNullOrEmpty(fullName)) fullName = username;
                     if (string.IsNullOrEmpty(fullName)) fullName = "Пользователь " + id;
-                    return new PeerInfo { Id = id, AccessHash = accessHash, Title = fullName, Initials = GetInitials(fullName) };
+                    return new PeerInfo { Id = id, AccessHash = accessHash, PhotoId = photoId, Title = fullName, Initials = GetInitials(fullName) };
                 }
             }
             catch { }
@@ -267,6 +294,32 @@ namespace MetroTelegram.TL
             int startPos = reader.Position;
             bool isGroup = (constructor == 0x41cbf256 || constructor == 0xd63d27e7 || constructor == 0xd155047b);
 
+            // 1. ОБЫЧНЫЕ ГРУППЫ (chat#41cbf256 - ровно ОДНО поле flags:#)
+            if (isGroup)
+            {
+                try
+                {
+                    int flags = ReadInt32Safe(reader);
+                    long id = ReadInt64Safe(reader);
+                    string title = ReadStringSafe(reader);
+
+                    long photoId = 0;
+                    uint photoCons = ReadUInt32Safe(reader);
+                    if (photoCons == 0x1c6e1c11) // chatPhoto#1c6e1c11
+                    {
+                        int pFlags = ReadInt32Safe(reader);
+                        photoId = ReadInt64Safe(reader);
+                    }
+
+                    if (id > 0 && id < 100000000000L && title != null && title.Length < 150)
+                    {
+                        return new PeerInfo { Id = id, AccessHash = 0, PhotoId = photoId, Title = title, Initials = GetInitials(title), IsChannel = false, IsGroup = true };
+                    }
+                }
+                catch { }
+            }
+
+            reader.Position = startPos;
             try
             {
                 int flags = ReadInt32Safe(reader);
@@ -276,9 +329,23 @@ namespace MetroTelegram.TL
                 long accessHash = (!isGroup && ((flags & 8192) != 0)) ? ReadInt64Safe(reader) : 0;
                 string title = ReadStringSafe(reader);
 
+                string username = "";
+                if (!isGroup && (flags & 64) != 0)
+                {
+                    username = ReadStringSafe(reader);
+                }
+
+                long photoId = 0;
+                uint photoCons = ReadUInt32Safe(reader);
+                if (photoCons == 0x1c6e1c11)
+                {
+                    int pFlags = ReadInt32Safe(reader);
+                    photoId = ReadInt64Safe(reader);
+                }
+
                 if (id > 0 && id < 100000000000L && title != null && title.Length < 150)
                 {
-                    return new PeerInfo { Id = id, AccessHash = accessHash, Title = title, Initials = GetInitials(title), IsChannel = !isGroup, IsGroup = isGroup };
+                    return new PeerInfo { Id = id, AccessHash = accessHash, PhotoId = photoId, Title = title, Initials = GetInitials(title), IsChannel = !isGroup, IsGroup = isGroup };
                 }
             }
             catch { }
@@ -292,9 +359,23 @@ namespace MetroTelegram.TL
                 long accessHash = (!isGroup && ((flags & 8192) != 0)) ? ReadInt64Safe(reader) : 0;
                 string title = ReadStringSafe(reader);
 
+                string username = "";
+                if (!isGroup && (flags & 64) != 0)
+                {
+                    username = ReadStringSafe(reader);
+                }
+
+                long photoId = 0;
+                uint photoCons = ReadUInt32Safe(reader);
+                if (photoCons == 0x1c6e1c11)
+                {
+                    int pFlags = ReadInt32Safe(reader);
+                    photoId = ReadInt64Safe(reader);
+                }
+
                 if (id > 0 && id < 100000000000L && title != null && title.Length < 150)
                 {
-                    return new PeerInfo { Id = id, AccessHash = accessHash, Title = title, Initials = GetInitials(title), IsChannel = !isGroup, IsGroup = isGroup };
+                    return new PeerInfo { Id = id, AccessHash = accessHash, PhotoId = photoId, Title = title, Initials = GetInitials(title), IsChannel = !isGroup, IsGroup = isGroup };
                 }
             }
             catch { }

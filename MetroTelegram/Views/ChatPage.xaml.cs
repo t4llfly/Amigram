@@ -575,6 +575,17 @@ namespace MetroTelegram.Views
             }
         }
 
+        private void ChatHeader_Tap(object sender, System.Windows.Input.GestureEventArgs e)
+        {
+            string uri = string.Format("/Views/ProfilePage.xaml?id={0}&accessHash={1}&peerType={2}&title={3}",
+                ViewModel.PeerId,
+                ViewModel.AccessHash,
+                ViewModel.PeerType,
+                Uri.EscapeDataString(ViewModel.Title ?? "Профиль"));
+
+            NavigationService.Navigate(new Uri(uri, UriKind.Relative));
+        }
+
         private void ScrollToBottom()
         {
             if (ViewModel.Messages.Count > 0)

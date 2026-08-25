@@ -17,6 +17,7 @@ namespace MetroTelegram
         private ProgressIndicator _progressIndicator;
         private DialogsService _dialogsService;
         private ContactsService _contactsService;
+        private MediaService _mediaService;
 
         public MainPage()
         {
@@ -59,6 +60,7 @@ namespace MetroTelegram
 
                 _dialogsService = new DialogsService(App.RpcEngine);
                 _contactsService = new ContactsService(App.RpcEngine);
+                _mediaService = new MediaService(App.RpcEngine);
 
                 try
                 {
@@ -70,6 +72,32 @@ namespace MetroTelegram
                         foreach (var d in dialogs)
                         {
                             App.ViewModel.Dialogs.Add(d);
+
+                            if (d.PhotoId != 0)
+                            {
+                                Task.Run(async () =>
+                                {
+                                    byte[] avatarBytes = await _mediaService.LoadAvatarBytesAsync(
+                                        d.Id, d.AccessHash, d.PeerType, d.PhotoId);
+
+                                    if (avatarBytes != null && avatarBytes.Length > 0)
+                                    {
+                                        Dispatcher.BeginInvoke(() =>
+                                        {
+                                            try
+                                            {
+                                                var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                                                using (var ms = new System.IO.MemoryStream(avatarBytes))
+                                                {
+                                                    bmp.SetSource(ms);
+                                                }
+                                                d.AvatarImage = bmp;
+                                            }
+                                            catch { }
+                                        });
+                                    }
+                                });
+                            }
                         }
                     });
                 }
