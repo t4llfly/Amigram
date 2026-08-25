@@ -91,6 +91,11 @@ namespace MetroTelegram
 
                 RpcEngine = new TelegramRpcEngine(Transport, Storage);
 
+                Updates?.Dispose();
+                Updates = new UpdatesService(RpcEngine);
+                Updates.MessageReceived += OnGlobalMessageReceived;
+                Updates.OutboxRead += (s, e) => { LiveOutboxRead?.Invoke(s, e); };
+
                 statusCallback?.Invoke("Инициализация MTProto 2.0...");
                 byte[] configQuery;
                 using (var writer = new TlBinaryWriter())
@@ -100,11 +105,6 @@ namespace MetroTelegram
                 }
 
                 await RpcEngine.SendRpcQueryAsync(configQuery, wrapInitConnection: true);
-
-                Updates?.Dispose();
-                Updates = new UpdatesService(RpcEngine);
-                Updates.MessageReceived += OnGlobalMessageReceived;
-                Updates.OutboxRead += (s, e) => { LiveOutboxRead?.Invoke(s, e); };
 
                 Debug.WriteLine("[App] MTProto 2.0 с глобальной обработкой обновлений готов!");
             }

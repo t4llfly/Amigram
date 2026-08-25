@@ -230,6 +230,103 @@ namespace MetroTelegram.TL
             catch { }
         }
 
+        private void TryCacheUser(TlBinaryReader reader, uint constructor)
+        {
+            try
+            {
+                if (constructor == 0xd3bc4b7a) { ReadInt64Safe(reader); return; }
+
+                int startPos = reader.Position;
+                try
+                {
+                    int flags = ReadInt32Safe(reader);
+                    int flags2 = ReadInt32Safe(reader);
+                    long id = ReadInt64Safe(reader);
+                    if ((flags & 1) != 0) ReadInt64Safe(reader);
+                    string firstName = ((flags & 2) != 0) ? ReadStringSafe(reader) : "";
+                    string lastName = ((flags & 4) != 0) ? ReadStringSafe(reader) : "";
+                    string username = ((flags & 8) != 0) ? ReadStringSafe(reader) : "";
+
+                    string fullName = (firstName + " " + lastName).Trim();
+                    if (string.IsNullOrEmpty(fullName)) fullName = username;
+
+                    if (id > 0 && id < 100000000000L && !string.IsNullOrEmpty(fullName))
+                    {
+                        MetroTelegram.App.CacheUser(id, fullName);
+                        return;
+                    }
+                    throw new Exception();
+                }
+                catch
+                {
+                    reader.Position = startPos;
+                    int flags = ReadInt32Safe(reader);
+                    long id = ReadInt64Safe(reader);
+                    if ((flags & 1) != 0) ReadInt64Safe(reader);
+                    string firstName = ((flags & 2) != 0) ? ReadStringSafe(reader) : "";
+                    string lastName = ((flags & 4) != 0) ? ReadStringSafe(reader) : "";
+                    string username = ((flags & 8) != 0) ? ReadStringSafe(reader) : "";
+
+                    string fullName = (firstName + " " + lastName).Trim();
+                    if (string.IsNullOrEmpty(fullName)) fullName = username;
+
+                    if (id > 0 && id < 100000000000L && !string.IsNullOrEmpty(fullName))
+                    {
+                        MetroTelegram.App.CacheUser(id, fullName);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void TryCacheChat(TlBinaryReader reader, uint constructor)
+        {
+            try
+            {
+                if (constructor == 0x6592a1a7)
+                {
+                    long fId = ReadInt64Safe(reader);
+                    string fTitle = ReadStringSafe(reader);
+                    if (fId > 0 && !string.IsNullOrEmpty(fTitle)) MetroTelegram.App.CacheUser(fId, fTitle);
+                    return;
+                }
+                if (constructor == 0x29562865) return;
+
+                bool isGroup = (constructor == 0x41cbf256 || constructor == 0xd63d27e7 || constructor == 0xd155047b);
+                int startPos = reader.Position;
+
+                try
+                {
+                    int flags = ReadInt32Safe(reader);
+                    int flags2 = ReadInt32Safe(reader);
+                    long id = ReadInt64Safe(reader);
+                    if (!isGroup && (flags & 8192) != 0) ReadInt64Safe(reader);
+                    string title = ReadStringSafe(reader);
+
+                    if (id > 0 && !string.IsNullOrEmpty(title) && title.Length < 150)
+                    {
+                        MetroTelegram.App.CacheUser(id, title);
+                        return;
+                    }
+                    throw new Exception();
+                }
+                catch
+                {
+                    reader.Position = startPos;
+                    int flags = ReadInt32Safe(reader);
+                    long id = ReadInt64Safe(reader);
+                    if (!isGroup && (flags & 8192) != 0) ReadInt64Safe(reader);
+                    string title = ReadStringSafe(reader);
+
+                    if (id > 0 && !string.IsNullOrEmpty(title) && title.Length < 150)
+                    {
+                        MetroTelegram.App.CacheUser(id, title);
+                    }
+                }
+            }
+            catch { }
+        }
+
         private void ScanAndDispatchAllMessages(byte[] updateData)
         {
             var parsedMessages = new List<IncomingMessageEventArgs>();
@@ -251,6 +348,18 @@ namespace MetroTelegram.TL
                         else if (cons == 0xb75f99a9)
                         {
                             ReadOutboxChannelSafe(reader);
+                        }
+                        else if (cons == 0x215c4438 || cons == 0x83314057 || cons == 0x93b272a7 || cons == 0x2e56d744 ||
+                                 cons == 0xd23c81a3 || cons == 0x3ff6ecb0 || cons == 0xb1b8cc83 || cons == 0xabb5f120)
+                        {
+                            TryCacheUser(reader, cons);
+                        }
+                        else if (cons == 0xd49f34c6 || cons == 0x1c32b11c || cons == 0x833eed5d || cons == 0xa086f67e ||
+                                 cons == 0x41cbf256 || cons == 0xd63d27e7 || cons == 0xd155047b || cons == 0x826fe213 ||
+                                 cons == 0x0736424e || cons == 0x17d493d5 || cons == 0x65efe954 || cons == 0x6592a1a7 ||
+                                 cons == 0x29562865 || cons == 0x94f592db)
+                        {
+                            TryCacheChat(reader, cons);
                         }
                         else if (cons == 0x76bec211 || cons == 0x9cb490e9 || cons == 0x3ae56482 || cons == 0x38116eed ||
                                  cons == 0x761450c7 || cons == 0x85d691f8 || cons == 0xaf0e3651 || cons == 0x38116ee0 ||
