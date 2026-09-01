@@ -217,14 +217,13 @@ namespace MetroTelegram.TL
                 string phone = ((flags & 16) != 0) ? ReadStringSafe(reader) : "";
 
                 long photoId = 0;
-                // flags.5 = photo (userProfilePhoto#82d1f706)
                 if ((flags & 32) != 0)
                 {
                     uint photoCons = ReadUInt32Safe(reader);
                     if (photoCons == 0x82d1f706)
                     {
                         int pFlags = ReadInt32Safe(reader);
-                        photoId = ReadInt64Safe(reader); // photo_id
+                        photoId = ReadInt64Safe(reader);
                     }
                 }
 
@@ -294,7 +293,6 @@ namespace MetroTelegram.TL
             int startPos = reader.Position;
             bool isGroup = (constructor == 0x41cbf256 || constructor == 0xd63d27e7 || constructor == 0xd155047b);
 
-            // 1. ОБЫЧНЫЕ ГРУППЫ (chat#41cbf256 - ровно ОДНО поле flags:#)
             if (isGroup)
             {
                 try
@@ -305,7 +303,7 @@ namespace MetroTelegram.TL
 
                     long photoId = 0;
                     uint photoCons = ReadUInt32Safe(reader);
-                    if (photoCons == 0x1c6e1c11) // chatPhoto#1c6e1c11
+                    if (photoCons == 0x1c6e1c11)
                     {
                         int pFlags = ReadInt32Safe(reader);
                         photoId = ReadInt64Safe(reader);

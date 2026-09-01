@@ -152,6 +152,8 @@ namespace MetroTelegram.TL
             using (var reader = new TlBinaryReader(response))
             {
                 uint topConstructor = ReadUInt32Safe(reader);
+                Debug.WriteLine(string.Format("[ProfileService] Ответ участников: top=0x{0:X8}, размер={1}b", topConstructor, response.Length));
+
                 if ((topConstructor & 0xFFFFFF00) == 0x2144CA00 || topConstructor == 0x2144ca10)
                 {
                     int errorCode = ReadInt32Safe(reader);
@@ -163,7 +165,6 @@ namespace MetroTelegram.TL
                 {
                     int startPos = reader.Position;
                     uint cons = ReadUInt32Safe(reader);
-
                     try
                     {
                         if (cons == 0x215c4438 || cons == 0x83314057 || cons == 0x93b272a7 ||
@@ -178,11 +179,11 @@ namespace MetroTelegram.TL
                         }
                     }
                     catch { }
-
                     reader.Position = startPos + 1;
                 }
             }
 
+            Debug.WriteLine(string.Format("[ProfileService] Участников распознано: {0}", members.Count));
             return members;
         }
 

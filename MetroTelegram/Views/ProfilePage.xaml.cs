@@ -63,10 +63,11 @@ namespace MetroTelegram.Views
                     try
                     {
                         var channelMembers = await _profileService.GetChannelParticipantsAsync(
-                            ViewModel.Id, ViewModel.AccessHash, 0, 200);
+                                                    ViewModel.Id, ViewModel.AccessHash, 0, 200);
                         profile.Members.Clear();
                         profile.Members.AddRange(channelMembers);
                         profile.ParticipantsCount = channelMembers.Count;
+                        profile.Status = string.Format("{0} участников", Math.Max(profile.ParticipantsCount, 1));
                     }
                     catch (Exception exMembers)
                     {
@@ -87,16 +88,15 @@ namespace MetroTelegram.Views
                         ViewModel.Members.Add(m);
                     }
 
+                    Debug.WriteLine(string.Format("[ProfilePage] profile.Members={0}, ViewModel.Members={1}, PeerType={2}",
+                                                     profile.Members.Count, ViewModel.Members.Count, ViewModel.PeerType));
+
                     SetLoading(false);
                 });
             }
-            catch (Exception ex)
+            catch (Exception exMembers)
             {
-                Dispatcher.BeginInvoke(() =>
-                {
-                    SetLoading(false);
-                    Debug.WriteLine("[ProfilePage] Ошибка загрузки профиля: " + ex.Message);
-                });
+                Debug.WriteLine("[ProfilePage] ОШИБКА участников: " + exMembers.Message + " | " + exMembers.GetType().Name);
             }
         }
 

@@ -246,5 +246,10 @@ namespace MetroTelegram
             _progressIndicator.IsIndeterminate = isLoading;
             _progressIndicator.Text = text;
         }
+
+        private void Pivot_Loaded(object sender, RoutedEventArgs e)
+        {
+
+        }
     }
 }

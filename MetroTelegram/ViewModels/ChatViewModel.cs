@@ -14,6 +14,32 @@ namespace MetroTelegram.ViewModels
         public long FromId { get; set; }
         public bool IsService { get; set; }
 
+        public int ReplyToMsgId { get; set; }
+        public string ReplyQuoteText { get; set; }
+
+        private string _replyAuthor;
+        public string ReplyAuthor
+        {
+            get { return _replyAuthor; }
+            set { _replyAuthor = value; OnPropertyChanged(); }
+        }
+
+        private string _replyText;
+        public string ReplyText
+        {
+            get { return _replyText; }
+            set
+            {
+                _replyText = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasReply));
+                OnPropertyChanged(nameof(ReplyVisibility));
+            }
+        }
+
+        public bool HasReply => ReplyToMsgId > 0 || !string.IsNullOrEmpty(ReplyText);
+        public Visibility ReplyVisibility => HasReply ? Visibility.Visible : Visibility.Collapsed;
+
         public long PhotoId { get; set; }
         public long PhotoAccessHash { get; set; }
         public byte[] PhotoFileReference { get; set; }

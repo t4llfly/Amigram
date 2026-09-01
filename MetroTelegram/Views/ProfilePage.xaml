@@ -93,7 +93,7 @@
                 </ScrollViewer>
             </phone:PivotItem>
 
-            <phone:PivotItem Header="участники" Visibility="{Binding MembersTabVisibility}">
+            <phone:PivotItem Header="участники">
                 <phone:LongListSelector 
                     x:Name="MembersList"
                     ItemsSource="{Binding Members}"

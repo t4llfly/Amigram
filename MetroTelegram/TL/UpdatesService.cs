@@ -16,6 +16,13 @@ namespace MetroTelegram.TL
         public string Text { get; set; }
         public DateTime Date { get; set; }
         public bool IsOut { get; set; }
+        public int ReplyToMsgId { get; set; }
+        public string MediaDescription { get; set; }
+        public long PhotoId { get; set; }
+        public long PhotoAccessHash { get; set; }
+        public byte[] PhotoFileReference { get; set; }
+        public string PhotoThumbSize { get; set; }
+        public string PhotoFullThumbSize { get; set; }
     }
 
     public class OutboxReadEventArgs : EventArgs
@@ -133,6 +140,13 @@ namespace MetroTelegram.TL
                         int ptsCount = reader.ReadInt32();
                         int dateUnix = reader.ReadInt32();
 
+                        if ((flags & 4) != 0) SkipFwdHeaderSafe(reader);
+                        if ((flags & 2048) != 0) ReadInt64Safe(reader);
+                        int replyToId = 0;
+                        if ((flags & 8) != 0) ReadReplyHeaderSafe(reader, out replyToId);
+                        if ((flags & 128) != 0) SkipMessageEntitiesSafe(reader);
+                        if ((flags & 33554432) != 0) ReadInt32Safe(reader);
+
                         DateTime date = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(dateUnix).ToLocalTime();
                         bool isOut = (flags & 2) != 0;
 
@@ -144,7 +158,8 @@ namespace MetroTelegram.TL
                             FromId = isOut ? 0 : userId,
                             Text = text,
                             Date = date,
-                            IsOut = isOut
+                            IsOut = isOut,
+                            ReplyToMsgId = replyToId
                         });
                     }
                     else if (constructor == 0x4d6deea8)
@@ -158,6 +173,13 @@ namespace MetroTelegram.TL
                         int ptsCount = reader.ReadInt32();
                         int dateUnix = reader.ReadInt32();
 
+                        if ((flags & 4) != 0) SkipFwdHeaderSafe(reader);
+                        if ((flags & 2048) != 0) ReadInt64Safe(reader);
+                        int replyToId = 0;
+                        if ((flags & 8) != 0) ReadReplyHeaderSafe(reader, out replyToId);
+                        if ((flags & 128) != 0) SkipMessageEntitiesSafe(reader);
+                        if ((flags & 33554432) != 0) ReadInt32Safe(reader);
+
                         DateTime date = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(dateUnix).ToLocalTime();
                         bool isOut = (flags & 2) != 0;
 
@@ -169,7 +191,8 @@ namespace MetroTelegram.TL
                             FromId = fromId,
                             Text = text,
                             Date = date,
-                            IsOut = isOut
+                            IsOut = isOut,
+                            ReplyToMsgId = replyToId
                         });
                     }
                     else if (constructor == 0x2f2f21bf)
@@ -491,15 +514,12 @@ namespace MetroTelegram.TL
             if ((flags2 & 1) != 0) ReadInt64Safe(reader);
             if ((flags2 & 524288) != 0) ReadPeer(reader, out peerT);
 
-            if ((msgFlags & 8) != 0) SkipReplyHeaderSafe(reader);
+            int replyToMsgId = 0;
+            if ((msgFlags & 8) != 0) ReadReplyHeaderSafe(reader, out replyToMsgId);
 
             int dUnixSafe = ReadInt32Safe(reader);
             string msgText = ReadStringSafe(reader);
-
-            if ((msgFlags & 512) != 0 && string.IsNullOrEmpty(msgText))
-            {
-                msgText = "[Вложение]";
-            }
+            string mediaDesc = null;
 
             DateTime msgDate = (dUnixSafe > 1000000000) ? new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(dUnixSafe).ToLocalTime() : DateTime.Now;
 
@@ -507,6 +527,38 @@ namespace MetroTelegram.TL
             if (peerT == 1 && !isOut && fromId != 0)
             {
                 targetChatId = fromId;
+            }
+
+            if ((msgFlags & 512) != 0)
+            {
+                long photoId = 0; long photoAh = 0; byte[] photoRef = null;
+                string thumbSz = "m"; string fullSz = "x";
+
+                ReadPhotoMedia(reader, out photoId, out photoAh, out photoRef, out thumbSz, out fullSz);
+
+                if (photoId != 0)
+                {
+                    mediaDesc = "[Фото]";
+                    return new IncomingMessageEventArgs
+                    {
+                        MsgId = mId,
+                        PeerId = targetChatId,
+                        PeerType = peerT,
+                        FromId = fromId,
+                        Date = msgDate,
+                        IsOut = isOut,
+                        Text = !string.IsNullOrEmpty(msgText) ? msgText : "",
+                        ReplyToMsgId = replyToMsgId,
+                        MediaDescription = "[Фото]",
+                        PhotoId = photoId,
+                        PhotoAccessHash = photoAh,
+                        PhotoFileReference = photoRef,
+                        PhotoThumbSize = thumbSz,
+                        PhotoFullThumbSize = fullSz
+                    };
+                }
+
+                if (string.IsNullOrEmpty(msgText)) msgText = "[Вложение]";
             }
 
             return new IncomingMessageEventArgs
@@ -517,8 +569,43 @@ namespace MetroTelegram.TL
                 FromId = fromId,
                 Text = !string.IsNullOrEmpty(msgText) ? msgText : "[Сообщение]",
                 Date = msgDate,
-                IsOut = isOut
+                IsOut = isOut,
+                ReplyToMsgId = replyToMsgId,
+                MediaDescription = mediaDesc
             };
+        }
+
+        private void SkipMediaLightSafe(TlBinaryReader reader)
+        {
+            try
+            {
+                uint mediaCons = ReadUInt32Safe(reader);
+                if (mediaCons == 0x3ded6320 || mediaCons == 0x9f84f49e) return;
+            }
+            catch { }
+        }
+
+        private void SkipMessageEntitiesSafe(TlBinaryReader reader)
+        {
+            try
+            {
+                ReadUInt32Safe(reader);
+                int count = ReadInt32Safe(reader);
+                if (count < 0 || count > 500) throw new Exception();
+                for (int i = 0; i < count; i++)
+                {
+                    uint eCons = ReadUInt32Safe(reader);
+                    if (eCons == 0xf1ccaaac)
+                    {
+                        ReadInt32Safe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader);
+                        continue;
+                    }
+                    ReadInt32Safe(reader); ReadInt32Safe(reader);
+                    if (eCons == 0x73924be0 || eCons == 0x76a6d327) ReadStringSafe(reader);
+                    else if (eCons == 0xdc7b1140 || eCons == 0xc8cf05f8) ReadInt64Safe(reader);
+                }
+            }
+            catch { }
         }
 
         private void SkipFwdHeaderSafe(TlBinaryReader reader)
@@ -538,27 +625,105 @@ namespace MetroTelegram.TL
             if ((flags & 1024) != 0) ReadInt32Safe(reader);
         }
 
-        private void SkipReplyHeaderSafe(TlBinaryReader reader)
+        private void ReadReplyHeaderSafe(TlBinaryReader reader, out int replyToMsgId)
         {
+            replyToMsgId = 0;
             uint cons = ReadUInt32Safe(reader);
             int flags = ReadInt32Safe(reader);
             int pType;
-            if (cons == 0xa6d57763 || cons == 0xafb67427 || cons == 0x6917560b)
+
+            if (cons == 0x6917560b)
             {
-                ReadInt32Safe(reader);
+                if ((flags & 16) != 0) replyToMsgId = ReadInt32Safe(reader);
                 if ((flags & 1) != 0) ReadPeer(reader, out pType);
-                if ((flags & 2) != 0) ReadInt32Safe(reader);
-                if ((flags & 16) != 0) ReadInt32Safe(reader);
                 if ((flags & 32) != 0) SkipFwdHeaderSafe(reader);
+                if ((flags & 256) != 0) SkipMediaLightSafe(reader);
+                if ((flags & 2) != 0) ReadInt32Safe(reader);
                 if ((flags & 64) != 0) ReadStringSafe(reader);
+                if ((flags & 128) != 0) SkipMessageEntitiesSafe(reader);
+                if ((flags & 1024) != 0) ReadInt32Safe(reader);
+                if ((flags & 2048) != 0) ReadInt32Safe(reader);
             }
             else
             {
-                if ((flags & 16) != 0) ReadInt32Safe(reader);
-                if ((flags & 1) != 0) ReadInt32Safe(reader);
-                if ((flags & 2) != 0) ReadPeer(reader, out pType);
-                if ((flags & 32) != 0) SkipFwdHeaderSafe(reader);
+                replyToMsgId = ReadInt32Safe(reader);
+                if ((flags & 1) != 0) ReadPeer(reader, out pType);
+                if ((flags & 2) != 0) ReadInt32Safe(reader);
             }
+        }
+
+        private void ReadPhotoMedia(TlBinaryReader reader,
+    out long photoId, out long accessHash, out byte[] fileRef,
+    out string thumbSize, out string fullThumbSize)
+        {
+            photoId = 0; accessHash = 0; fileRef = null;
+            thumbSize = "m"; fullThumbSize = "x";
+
+            try
+            {
+                uint mediaCons = ReadUInt32Safe(reader);
+                if (mediaCons == 0x695150d7 || mediaCons == 0x4cf6d3d2)
+                {
+                    int pFlags = ReadInt32Safe(reader);
+                    if ((pFlags & 1) != 0)
+                    {
+                        uint photoCons = ReadUInt32Safe(reader);
+                        if (photoCons == 0xfb197a65 || photoCons == 0xd072acb4)
+                        {
+                            int photoFlags = ReadInt32Safe(reader);
+                            photoId = ReadInt64Safe(reader);
+                            accessHash = ReadInt64Safe(reader);
+                            fileRef = ReadBytesSafe(reader);
+                            ReadInt32Safe(reader);
+
+                            ReadUInt32Safe(reader);
+                            int sizeCount = ReadInt32Safe(reader);
+                            for (int i = 0; i < sizeCount; i++)
+                            {
+                                uint sCons = ReadUInt32Safe(reader);
+                                string type = ReadStringSafe(reader);
+                                if (sCons == 0x75c78e60)
+                                {
+                                    ReadInt32Safe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader);
+                                    if (type == "s" || type == "m") thumbSize = type;
+                                    if (type == "x" || type == "y" || type == "w" || type == "z") fullThumbSize = type;
+                                }
+                                else if (sCons == 0xfa3d5507)
+                                {
+                                    ReadInt32Safe(reader); ReadInt32Safe(reader);
+                                    int vCount = ReadInt32Safe(reader);
+                                    for (int v = 0; v < vCount; v++) ReadInt32Safe(reader);
+                                    if (type == "s" || type == "m") thumbSize = type;
+                                    if (type == "x" || type == "y" || type == "w" || type == "z") fullThumbSize = type;
+                                }
+                                else if (sCons == 0x021e1ad6 || sCons == 0x21e1ad6)
+                                { ReadInt32Safe(reader); ReadInt32Safe(reader); ReadBytesSafe(reader); }
+                                else if (sCons == 0xe0b0bc2e)
+                                { ReadBytesSafe(reader); }
+                                else if (sCons == 0xd8214d41)
+                                { ReadBytesSafe(reader); }
+                                else
+                                { ReadInt32Safe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); }
+                            }
+                        }
+                    }
+                    if ((pFlags & 4) != 0) ReadInt32Safe(reader);
+                }
+            }
+            catch { }
+        }
+
+        private byte[] ReadBytesSafe(TlBinaryReader reader)
+        {
+            if (reader.Remaining < 1) throw new Exception();
+            byte b = reader.ReadRawBytes(1)[0];
+            int len = b; int header = 1;
+            if (b == 254) { byte[] b3 = reader.ReadRawBytes(3); len = b3[0] | (b3[1] << 8) | (b3[2] << 16); header = 4; }
+            if (len < 0 || len > 1000000 || reader.Remaining < len) throw new Exception();
+            byte[] data = reader.ReadRawBytes(len);
+            int pad = (header == 1) ? (4 - ((len + 1) % 4)) % 4 : (4 - (len % 4)) % 4;
+            if (pad > 0 && reader.Remaining >= pad) reader.ReadRawBytes(pad);
+            return data;
         }
 
         private long ReadPeer(TlBinaryReader reader, out int peerType)

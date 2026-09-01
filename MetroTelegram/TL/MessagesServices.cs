@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using MetroTelegram.ViewModels;
+using System.Linq;
 
 namespace MetroTelegram.TL
 {
@@ -41,7 +42,7 @@ namespace MetroTelegram.TL
             return ParseHistoryResponse(response, peerType);
         }
 
-        public async Task<long> SendMessageAsync(long peerId, long accessHash, int peerType, string text)
+        public async Task<long> SendMessageAsync(long peerId, long accessHash, int peerType, string text, int replyToMsgId = 0)
         {
             long randomId;
             byte[] rndBytes = new byte[8];
@@ -51,9 +52,20 @@ namespace MetroTelegram.TL
             byte[] queryBytes;
             using (var writer = new TlBinaryWriter())
             {
+                int flags = (replyToMsgId > 0) ? 1 : 0;
+
                 writer.WriteUInt32(0x545cd15a);
-                writer.WriteInt32(0);
+                writer.WriteInt32(flags);
+
                 WriteInputPeer(writer, peerId, accessHash, peerType);
+
+                if (replyToMsgId > 0)
+                {
+                    writer.WriteUInt32(0x22c0f6d5);
+                    writer.WriteInt32(0);
+                    writer.WriteInt32(replyToMsgId);
+                }
+
                 writer.WriteString(text);
                 writer.WriteInt64(randomId);
 
@@ -172,13 +184,78 @@ namespace MetroTelegram.TL
                 {
                     string author;
                     if (usersDict.TryGetValue(m.FromId, out author))
-                    {
                         m.AuthorName = author;
-                    }
                     else if (peerType == 2 || peerType == 3)
-                    {
                         m.AuthorName = "Участник " + m.FromId;
+                }
+            }
+
+            var byId = new Dictionary<long, MessageItemViewModel>();
+            foreach (var m in rawMessages)
+                if (!byId.ContainsKey(m.Id)) byId[m.Id] = m;
+
+            foreach (var m in rawMessages)
+            {
+                if (m.ReplyToMsgId <= 0) continue;
+
+                MessageItemViewModel original;
+                if (byId.TryGetValue(m.ReplyToMsgId, out original))
+                {
+                    if (original.IsOutgoing)
+                        m.ReplyAuthor = "Вы";
+                    else if (!string.IsNullOrEmpty(original.AuthorName))
+                        m.ReplyAuthor = original.AuthorName;
+                    else if (original.FromId != 0)
+                    {
+                        string rAuthor;
+                        m.ReplyAuthor = usersDict.TryGetValue(original.FromId, out rAuthor)
+                            ? rAuthor
+                            : App.GetUserName(original.FromId);
                     }
+                    else
+                        m.ReplyAuthor = "";
+
+                    m.ReplyText = !string.IsNullOrEmpty(original.Text)
+                        ? original.Text
+                        : (original.HasPhoto ? "[Фото]" : "[Сообщение]");
+                }
+                else if (!string.IsNullOrEmpty(m.ReplyQuoteText))
+                {
+                    m.ReplyAuthor = "";
+                    m.ReplyText = m.ReplyQuoteText;
+                }
+                else
+                {
+                    m.ReplyAuthor = "";
+                    m.ReplyText = "Сообщение недоступно";
+                }
+            }
+
+            foreach (var m in rawMessages)
+            {
+                if (!byId.ContainsKey(m.Id)) byId[m.Id] = m;
+            }
+
+            foreach (var m in rawMessages)
+            {
+                if (m.ReplyToMsgId <= 0) continue;
+
+                MessageItemViewModel target;
+                if (byId.TryGetValue(m.ReplyToMsgId, out target))
+                {
+                    m.ReplyAuthor = target.IsOutgoing ? "Вы" : (target.AuthorName ?? App.GetUserName(target.FromId));
+                    m.ReplyText = !string.IsNullOrEmpty(target.Text) ? target.Text
+                                : (target.HasPhoto ? "[Фото]" : "[Сообщение]");
+                }
+                else if (!string.IsNullOrEmpty(m.ReplyQuoteText))
+                {
+                    m.ReplyAuthor = "";
+                    m.ReplyText = m.ReplyQuoteText;
+                }
+                else
+                {
+                    m.ReplyAuthor = "";
+                    m.ReplyText = "Сообщение недоступно";
                 }
             }
 
@@ -210,6 +287,8 @@ namespace MetroTelegram.TL
 
             int mId = ReadInt32Safe(reader);
             bool isOut = (msgFlags & 2) != 0;
+            Debug.WriteLine(string.Format("[MSG-TRACE] cons=0x{0:X8} flags=0x{1:X8} flags2=0x{2:X8} id={3} pos={4}",
+                constructor, msgFlags, flags2, mId, reader.Position));
 
             int peerT;
             long fromId = ((msgFlags & 256) != 0) ? ReadPeer(reader, out peerT) : 0;
@@ -224,7 +303,9 @@ namespace MetroTelegram.TL
             if ((flags2 & 1) != 0) ReadInt64Safe(reader);
             if ((flags2 & 524288) != 0) ReadPeer(reader, out peerT);
 
-            if ((msgFlags & 8) != 0) SkipReplyHeaderSafe(reader);
+            int replyToMsgId = 0;
+            string replyQuoteText = null;
+            if ((msgFlags & 8) != 0) ReadReplyHeaderSafe(reader, out replyToMsgId, out replyQuoteText);
 
             int dUnixSafe = ReadInt32Safe(reader);
             string msgText = ReadStringSafe(reader);
@@ -246,6 +327,7 @@ namespace MetroTelegram.TL
 
             DateTime msgDate = (dUnixSafe > 1000000000) ? new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(dUnixSafe).ToLocalTime() : DateTime.Now;
 
+            Debug.WriteLine(string.Format("[MSG-TRACE]   text='{0}' pos_after_text={1}", msgText, reader.Position));
             return new MessageItemViewModel
             {
                 Id = mId,
@@ -254,6 +336,8 @@ namespace MetroTelegram.TL
                 Date = msgDate,
                 IsOutgoing = isOut,
                 IsService = false,
+                ReplyToMsgId = replyToMsgId,
+                ReplyQuoteText = replyQuoteText,
                 PhotoId = photoId,
                 PhotoAccessHash = photoAccessHash,
                 PhotoFileReference = photoFileRef,
@@ -496,27 +580,136 @@ namespace MetroTelegram.TL
             if ((flags & 1024) != 0) ReadInt32Safe(reader);
         }
 
-        private void SkipReplyHeaderSafe(TlBinaryReader reader)
+        private void ReadReplyHeaderSafe(TlBinaryReader reader, out int replyToMsgId, out string quoteText)
         {
+            replyToMsgId = 0;
+            quoteText = null;
             uint cons = ReadUInt32Safe(reader);
-            int flags = ReadInt32Safe(reader);
             int pType;
-            if (cons == 0xa6d57763 || cons == 0xafb67427 || cons == 0x6917560b)
+
+            if (cons == 0x6917560b)
             {
-                ReadInt32Safe(reader);
+                int flags = ReadInt32Safe(reader);
+
+                if ((flags & 16) != 0) replyToMsgId = ReadInt32Safe(reader);
                 if ((flags & 1) != 0) ReadPeer(reader, out pType);
-                if ((flags & 2) != 0) ReadInt32Safe(reader);
-                if ((flags & 16) != 0) ReadInt32Safe(reader);
                 if ((flags & 32) != 0) SkipFwdHeaderSafe(reader);
-                if ((flags & 64) != 0) ReadStringSafe(reader);
+                if ((flags & 256) != 0) SkipMediaLightSafe(reader);
+                if ((flags & 2) != 0) ReadInt32Safe(reader);
+                if ((flags & 64) != 0) quoteText = ReadStringSafe(reader);
+                if ((flags & 128) != 0) SkipMessageEntitiesSafe(reader);
+                if ((flags & 1024) != 0) ReadInt32Safe(reader);
+                if ((flags & 2048) != 0) ReadInt32Safe(reader);
             }
             else
             {
-                if ((flags & 16) != 0) ReadInt32Safe(reader);
-                if ((flags & 1) != 0) ReadInt32Safe(reader);
-                if ((flags & 2) != 0) ReadPeer(reader, out pType);
-                if ((flags & 32) != 0) SkipFwdHeaderSafe(reader);
+                int flags = ReadInt32Safe(reader);
+                replyToMsgId = ReadInt32Safe(reader);
+                if ((flags & 1) != 0) ReadPeer(reader, out pType);
+                if ((flags & 2) != 0) ReadInt32Safe(reader);
             }
+        }
+
+        private void SkipMessageEntitiesSafe(TlBinaryReader reader)
+        {
+            ReadUInt32Safe(reader);
+            int count = ReadInt32Safe(reader);
+            for (int i = 0; i < count; i++)
+            {
+                uint eCons = ReadUInt32Safe(reader);
+                if (eCons == 0xf1ccaaac)
+                {
+                    ReadInt32Safe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader);
+                    continue;
+                }
+                ReadInt32Safe(reader); ReadInt32Safe(reader);
+                if (eCons == 0x73924be0 || eCons == 0x76a6d327) ReadStringSafe(reader);
+                else if (eCons == 0xdc7b1140 || eCons == 0xc8cf05f8) ReadInt64Safe(reader);
+            }
+        }
+
+        private void SkipMediaLightSafe(TlBinaryReader reader)
+        {
+            int peekPos = reader.Position;
+            uint mediaCons = ReadUInt32Safe(reader);
+            reader.Position = peekPos;
+
+            if (mediaCons == 0x3ded6320 || mediaCons == 0x9f84f49e) { ReadUInt32Safe(reader); return; }
+
+            if (mediaCons == 0x695150d7 || mediaCons == 0x4cf6d3d2)
+            {
+                long pId, pAh; byte[] pRef; string t1, t2;
+                ReadPhotoMedia(reader, out pId, out pAh, out pRef, out t1, out t2);
+                return;
+            }
+
+            if (mediaCons == 0x52d8ccd9)
+            {
+                ReadUInt32Safe(reader);
+                int flags = ReadInt32Safe(reader);
+                if ((flags & 1) != 0)
+                {
+                    uint docCons = ReadUInt32Safe(reader);
+                    if (docCons == 0x8fd4c4d8)
+                    {
+                        int dFlags = ReadInt32Safe(reader);
+                        ReadInt64Safe(reader);
+                        ReadInt64Safe(reader);
+                        ReadBytesSafe(reader);
+                        ReadInt32Safe(reader);
+                        ReadStringSafe(reader);
+                        ReadInt64Safe(reader);
+                        if ((dFlags & 1) != 0) { ReadUInt32Safe(reader); int c = ReadInt32Safe(reader); for (int i = 0; i < c; i++) SkipPhotoSizeItemSafe(reader); }
+                        if ((dFlags & 2) != 0) { ReadUInt32Safe(reader); int c = ReadInt32Safe(reader); for (int i = 0; i < c; i++) { ReadUInt32Safe(reader); ReadInt32Safe(reader); ReadStringSafe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); } }
+                        ReadInt32Safe(reader);
+                        ReadUInt32Safe(reader); int attrCount = ReadInt32Safe(reader);
+                        for (int i = 0; i < attrCount; i++) SkipDocumentAttributeItemSafe(reader);
+                    }
+                    else if (docCons == 0x36f8c871) ReadInt64Safe(reader);
+                }
+                if ((flags & 4) != 0) ReadInt32Safe(reader);
+                return;
+            }
+
+            throw new Exception("Неизвестный тип reply_media: 0x" + mediaCons.ToString("X8"));
+        }
+
+        private void SkipPhotoSizeItemSafe(TlBinaryReader reader)
+        {
+            uint cons = ReadUInt32Safe(reader);
+            if (cons == 0xe17e23c) { ReadStringSafe(reader); return; }
+            if (cons == 0x75c78e60) { ReadStringSafe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); return; }
+            if (cons == 0x21e1ad6) { ReadStringSafe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); ReadBytesSafe(reader); return; }
+            if (cons == 0xe0b0bc2e) { ReadStringSafe(reader); ReadBytesSafe(reader); return; }
+            if (cons == 0xfa3efb95) { ReadStringSafe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader); ReadUInt32Safe(reader); int c = ReadInt32Safe(reader); for (int i = 0; i < c; i++) ReadInt32Safe(reader); return; }
+            if (cons == 0xd8214d41) { ReadStringSafe(reader); ReadBytesSafe(reader); return; }
+        }
+
+        private void SkipDocumentAttributeItemSafe(TlBinaryReader reader)
+        {
+            uint cons = ReadUInt32Safe(reader);
+            if (cons == 0x15590068) { ReadStringSafe(reader); return; }
+            if (cons == 0x6c37c15c) { ReadInt32Safe(reader); ReadInt32Safe(reader); return; }
+            if (cons == 0x11b58939 || cons == 0x9801d2f7) return;
+            if (cons == 0xef02ce6)
+            {
+                int f = ReadInt32Safe(reader);
+                ReadDoubleSafe(reader); ReadInt32Safe(reader); ReadInt32Safe(reader);
+                if ((f & 4) != 0) ReadInt32Safe(reader);
+                if ((f & 16) != 0) ReadDoubleSafe(reader);
+                if ((f & 32) != 0) ReadStringSafe(reader);
+                return;
+            }
+            if (cons == 0x9852f9c6)
+            {
+                int f = ReadInt32Safe(reader);
+                ReadInt32Safe(reader);
+                if ((f & 1) != 0) ReadStringSafe(reader);
+                if ((f & 2) != 0) ReadStringSafe(reader);
+                if ((f & 4) != 0) ReadBytesSafe(reader);
+                return;
+            }
+            throw new Exception("Неизвестный DocumentAttribute: 0x" + cons.ToString("X8"));
         }
 
         private long ReadPeer(TlBinaryReader reader, out int peerType)

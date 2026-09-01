@@ -18,9 +18,9 @@
 
         <DataTemplate x:Key="MetroPivotTitleTemplate">
             <TextBlock Text="{Binding}" 
-                       FontSize="13" 
+                       FontSize="20" 
                        FontFamily="Segoe UI Semibold" 
-                       Margin="0,14,0,0" 
+                       Margin="0,12,0,-8" 
                        Foreground="{StaticResource PhoneSubtleForegroundBrush}"/>
         </DataTemplate>
 

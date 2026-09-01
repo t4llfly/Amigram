@@ -65,13 +65,14 @@
             x:Name="MessagesList"
             Grid.Row="1"
             ItemsSource="{Binding Messages}"
-            Margin="16,0,16,0">
+            Margin="8,0,8,0">
             <phone:LongListSelector.ItemTemplate>
                 <DataTemplate>
                     <Grid HorizontalAlignment="{Binding BubbleAlignment}" Margin="{Binding BubbleMargin}">
                         <Border Background="{Binding BubbleBackground}" Padding="12,8,12,8" toolkit:TiltEffect.IsTiltEnabled="True">
                             <toolkit:ContextMenuService.ContextMenu>
                                 <toolkit:ContextMenu>
+                                    <toolkit:MenuItem Header="ответить" Click="ReplyMessage_Click"/>
                                     <toolkit:MenuItem Header="копировать текст" Click="CopyMessage_Click"/>
                                     <toolkit:MenuItem Header="переслать в чат..." Click="ForwardMessage_Click"/>
                                     <toolkit:MenuItem Header="удалить для меня" Click="DeleteForMe_Click"/>
@@ -86,6 +87,29 @@
                                            FontSize="13" 
                                            Foreground="{StaticResource PhoneAccentBrush}"
                                            Margin="0,0,0,4"/>
+
+                                <!-- БЛОК ОТВЕТА / ЦИТАТЫ (Metro Reply Bar с акцентной полосой слева) -->
+                                <Border Visibility="{Binding ReplyVisibility}" 
+                                        Background="#22FFFFFF" 
+                                        BorderBrush="{StaticResource PhoneAccentBrush}" 
+                                        BorderThickness="3,0,0,0" 
+                                        Padding="8,4,8,4" 
+                                        Margin="0,0,0,6"
+                                        Tap="ReplyBlock_Tap"
+                                        toolkit:TiltEffect.IsTiltEnabled="True">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding ReplyAuthor}" 
+                                                   FontFamily="Segoe UI Semibold" 
+                                                   FontSize="12" 
+                                                   TextTrimming="WordEllipsis"/>
+                                        <TextBlock Text="{Binding ReplyText}" 
+                                                   FontFamily="Segoe UI" 
+                                                   FontSize="13" 
+                                                   Foreground="#E0FFFFFF" 
+                                                   TextTrimming="WordEllipsis"
+                                                   TextWrapping="NoWrap"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Visibility="{Binding PhotoVisibility}" 
                                         CornerRadius="2" 
@@ -122,8 +146,55 @@
                 </DataTemplate>
             </phone:LongListSelector.ItemTemplate>
         </phone:LongListSelector>
+        <StackPanel Grid.Row="2">
+            <!-- ПЛАШКА АКТИВНОГО ОТВЕТА (появляется при выборе "ответить") -->
+            <Border x:Name="ReplyPreviewBar" 
+                    Visibility="Collapsed" 
+                    Background="#181818" 
+                    BorderBrush="{StaticResource PhoneAccentBrush}" 
+                    BorderThickness="3,0,0,0" 
+                    Padding="12,6,8,6" 
+                    Margin="12,4,12,2">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="2" Background="#111111" Padding="8,6,8,8" BorderThickness="0,1,0,0" BorderBrush="#222222">
+                    <StackPanel Grid.Column="0">
+                        <TextBlock x:Name="ReplyPreviewAuthorTextBlock" 
+                                   Text="Ответ" 
+                                   FontFamily="Segoe UI Semibold" 
+                                   FontSize="12" 
+                                   Foreground="{StaticResource PhoneAccentBrush}"/>
+                        <TextBlock x:Name="ReplyPreviewMessageTextBlock" 
+                                   Text="Текст сообщения..." 
+                                   FontFamily="Segoe UI" 
+                                   FontSize="13" 
+                                   Foreground="#C0FFFFFF" 
+                                   TextTrimming="WordEllipsis"
+                                   TextWrapping="NoWrap"/>
+                    </StackPanel>
+
+                    <!-- Кнопка отмены ответа (крестик) -->
+                    <Button x:Name="CancelReplyButton" 
+                            Grid.Column="1" 
+                            Click="CancelReplyButton_Click"
+                            Background="Transparent" 
+                            BorderBrush="Transparent"
+                            Padding="0"
+                            Width="36" Height="36"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="&#xE10A;" 
+                                   FontFamily="Segoe UI Symbol" 
+                                   FontSize="14" 
+                                   Foreground="{StaticResource PhoneSubtleForegroundBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Button>
+                </Grid>
+            </Border>
+            <Border Grid.Row="2" Padding="8,6,8,8" BorderThickness="0,1,0,0" BorderBrush="#222222">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -141,7 +212,7 @@
                         VerticalAlignment="Bottom">
                     <TextBlock Text="&#xE16C;" 
                                FontFamily="Segoe UI Symbol" 
-                               FontSize="22" 
+                               FontSize="26" 
                                Foreground="{StaticResource PhoneAccentBrush}"
                                HorizontalAlignment="Center"
                                VerticalAlignment="Center"/>
@@ -174,6 +245,8 @@
                 </Button>
             </Grid>
         </Border>
+        </StackPanel>
+
     </Grid>
 
 </phone:PhoneApplicationPage>

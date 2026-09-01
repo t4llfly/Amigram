@@ -211,20 +211,39 @@ namespace MetroTelegram.Views
             {
                 Dispatcher.BeginInvoke(() =>
                 {
-                    _typingResetTimer.Stop();
-                    ChatSubtitleTextBlock.Text = _originalSubtitle;
-                    ChatSubtitleTextBlock.Foreground = (Brush)Application.Current.Resources["PhoneSubtleForegroundBrush"];
-
-                    if (e.MsgId != 0 && ViewModel.Messages.Any(m => m.Id == e.MsgId))
-                        return;
+                    if (e.MsgId != 0 && ViewModel.Messages.Any(m => m.Id == e.MsgId)) return;
 
                     string authorName = "";
                     if (!e.IsOut && (ViewModel.PeerType == 2 || ViewModel.PeerType == 3))
-                    {
                         authorName = App.GetUserName(e.FromId);
+
+                    string replyAuthor = null, replyText = null;
+                    if (e.ReplyToMsgId > 0)
+                    {
+                        var original = ViewModel.Messages.FirstOrDefault(m => m.Id == e.ReplyToMsgId);
+                        if (original != null)
+                        {
+                            if (original.IsOutgoing)
+                                replyAuthor = "Вы";
+                            else if (!string.IsNullOrEmpty(original.AuthorName))
+                                replyAuthor = original.AuthorName;
+                            else if (original.FromId != 0)
+                                replyAuthor = App.GetUserName(original.FromId);
+                            else
+                                replyAuthor = "";
+
+                            replyText = !string.IsNullOrEmpty(original.Text)
+                                ? original.Text
+                                : (original.HasPhoto ? "[Фото]" : "[Сообщение]");
+                        }
+                        else
+                        {
+                            replyAuthor = "";
+                            replyText = "Сообщение";
+                        }
                     }
 
-                    ViewModel.Messages.Add(new MessageItemViewModel
+                    var newMsg = new MessageItemViewModel
                     {
                         Id = e.MsgId,
                         FromId = e.FromId,
@@ -233,17 +252,56 @@ namespace MetroTelegram.Views
                         Date = e.Date,
                         IsOutgoing = e.IsOut,
                         DeliveryStatus = 1,
-                        IsService = false
-                    });
+                        IsService = false,
+                        ReplyToMsgId = e.ReplyToMsgId,
+                        ReplyAuthor = replyAuthor,
+                        ReplyText = replyText,
+                        PhotoId = e.PhotoId,
+                        PhotoAccessHash = e.PhotoAccessHash,
+                        PhotoFileReference = e.PhotoFileReference,
+                        PhotoThumbSize = e.PhotoThumbSize,
+                        PhotoFullThumbSize = e.PhotoFullThumbSize
+                    };
 
+                    ViewModel.Messages.Add(newMsg);
                     ScrollToBottom();
+
+                    if (e.PhotoId != 0 && _mediaService != null)
+                    {
+                        var msgRef = newMsg;
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                byte[] imageBytes = await _mediaService.LoadPhotoBytesAsync(
+                                    e.PhotoId, e.PhotoAccessHash, e.PhotoFileReference, e.PhotoThumbSize);
+
+                                if (imageBytes != null && imageBytes.Length > 0)
+                                {
+                                    Dispatcher.BeginInvoke(() =>
+                                    {
+                                        try
+                                        {
+                                            var bmp = new BitmapImage();
+                                            using (var ms = new MemoryStream(imageBytes))
+                                                bmp.SetSource(ms);
+                                            msgRef.PhotoImage = bmp;
+                                        }
+                                        catch { }
+                                    });
+                                }
+                            }
+                            catch { }
+                        });
+                    }
                 });
 
                 if (!e.IsOut && App.Updates != null && e.MsgId > 0)
                 {
                     Task.Run(async () =>
                     {
-                        await App.Updates.ReadHistoryAsync(ViewModel.PeerId, ViewModel.AccessHash, ViewModel.PeerType, (int)e.MsgId);
+                        await App.Updates.ReadHistoryAsync(
+                            ViewModel.PeerId, ViewModel.AccessHash, ViewModel.PeerType, (int)e.MsgId);
                     });
                 }
             }
@@ -296,6 +354,13 @@ namespace MetroTelegram.Views
 
             MessageInputBox.Text = string.Empty;
 
+            int replyId = (_pendingReplyMessage != null) ? (int)_pendingReplyMessage.Id : 0;
+            string replyAuthor = (_pendingReplyMessage != null) ? ReplyPreviewAuthorTextBlock.Text : "";
+            string replyText = (_pendingReplyMessage != null) ? ReplyPreviewMessageTextBlock.Text : "";
+
+            _pendingReplyMessage = null;
+            ReplyPreviewBar.Visibility = Visibility.Collapsed;
+
             var localMsg = new MessageItemViewModel
             {
                 Id = 0,
@@ -303,7 +368,10 @@ namespace MetroTelegram.Views
                 Date = DateTime.Now,
                 IsOutgoing = true,
                 DeliveryStatus = 0,
-                IsService = false
+                IsService = false,
+                ReplyToMsgId = replyId,
+                ReplyAuthor = replyAuthor,
+                ReplyText = replyText
             };
 
             ViewModel.Messages.Add(localMsg);
@@ -312,7 +380,7 @@ namespace MetroTelegram.Views
             try
             {
                 await App.EnsureTelegramConnectedAsync();
-                await _messagesService.SendMessageAsync(ViewModel.PeerId, ViewModel.AccessHash, ViewModel.PeerType, text);
+                await _messagesService.SendMessageAsync(ViewModel.PeerId, ViewModel.AccessHash, ViewModel.PeerType, text, replyId);
 
                 localMsg.DeliveryStatus = 1;
             }
@@ -584,6 +652,55 @@ namespace MetroTelegram.Views
                 Uri.EscapeDataString(ViewModel.Title ?? "Профиль"));
 
             NavigationService.Navigate(new Uri(uri, UriKind.Relative));
+        }
+
+        private void ReplyBlock_Tap(object sender, System.Windows.Input.GestureEventArgs e)
+        {
+            var element = sender as FrameworkElement;
+            if (element != null)
+            {
+                var currentMsg = element.DataContext as MessageItemViewModel;
+                if (currentMsg != null && currentMsg.ReplyToMsgId > 0)
+                {
+                    var targetMsg = ViewModel.Messages.FirstOrDefault(m => m.Id == currentMsg.ReplyToMsgId);
+                    if (targetMsg != null)
+                    {
+                        MessagesList.ScrollTo(targetMsg);
+                    }
+                }
+            }
+        }
+
+        private MessageItemViewModel _pendingReplyMessage = null;
+
+        private void ReplyMessage_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as Microsoft.Phone.Controls.MenuItem;
+            if (menuItem != null)
+            {
+                var msg = menuItem.DataContext as MessageItemViewModel;
+                if (msg != null && msg.Id > 0)
+                {
+                    _pendingReplyMessage = msg;
+
+                    ReplyPreviewAuthorTextBlock.Text = !string.IsNullOrEmpty(msg.AuthorName)
+                        ? msg.AuthorName
+                        : (msg.IsOutgoing ? "Вы" : ViewModel.Title);
+
+                    ReplyPreviewMessageTextBlock.Text = !string.IsNullOrEmpty(msg.Text)
+                        ? msg.Text
+                        : (msg.HasPhoto ? "[Фотография]" : "[Сообщение]");
+
+                    ReplyPreviewBar.Visibility = Visibility.Visible;
+                    MessageInputBox.Focus();
+                }
+            }
+        }
+
+        private void CancelReplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            _pendingReplyMessage = null;
+            ReplyPreviewBar.Visibility = Visibility.Collapsed;
         }
 
         private void ScrollToBottom()
